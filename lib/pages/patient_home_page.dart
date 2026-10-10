@@ -1,7 +1,6 @@
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../models/access_request_data.dart';
@@ -14,6 +13,7 @@ import '../services/akesa_api.dart';
 import '../models/identity_verification_data.dart';
 
 import 'patient_profile_form_page.dart';
+import 'identify_verification_page.dart';
 
 import '../widgets/patient/access_request_card.dart';
 import '../widgets/patient/history_card.dart';
@@ -55,6 +55,28 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
   IdentityVerificationData? _identityVerification;
   bool _identityLoading = false;
+
+  bool _canCreateNewVerification(String status) {
+    switch (status.toUpperCase()) {
+      case 'EXPIRED':
+      case 'DOCUMENT_REJECTED':
+      case 'DATA_MISMATCH':
+      case 'LIVENESS_FAILED':
+      case 'FACE_MISMATCH':
+        return true;
+
+      case 'PENDING':
+      case 'PROCESSING':
+      case 'MANUAL_REVIEW':
+        return false;
+
+      case 'VERIFIED':
+        return false;
+
+      default:
+        return true;
+    }
+  }
 
   List<HospitalData> hospitals = [];
   List<AccessRequestData> requests = [];
@@ -229,7 +251,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
   // VERIFICATION & IDENTIFY KTP
   // ==========================================================
 
-  Future<void> _startIdentityVerification() async {
+  Future<void> _openIdentityVerification() async {
     if (_identityLoading) return;
 
     setState(() {
@@ -237,88 +259,53 @@ class _PatientHomePageState extends State<PatientHomePage> {
     });
 
     try {
-      final verification = await api.createIdentityVerification();
+      // Cek apakah masih ada verification yang aktif
+      final latestVerification = await api.getLatestIdentityVerification();
+
+      IdentityVerificationData verification;
+
+      if (latestVerification == null ||
+          _canCreateNewVerification(latestVerification.status)) {
+        verification = await api.createIdentityVerification();
+      } else {
+        verification = latestVerification;
+      }
 
       if (!mounted) return;
 
-      final source = await showModalBottomSheet<ImageSource>(
-        context: context,
-        builder: (context) {
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.photo_library_outlined),
-                  title: const Text('Upload KTP'),
-                  subtitle: const Text('Pilih foto KTP dari perangkat'),
-                  onTap: () {
-                    Navigator.pop(context, ImageSource.gallery);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.camera_alt_outlined),
-                  title: const Text('Foto KTP'),
-                  subtitle: const Text('Ambil foto KTP sekarang'),
-                  onTap: () {
-                    Navigator.pop(context, ImageSource.camera);
-                  },
-                ),
-              ],
-            ),
-          );
-        },
+      final result = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => IdentityVerificationPage(
+            authState: widget.authState,
+            verificationId: verification.id,
+          ),
+        ),
       );
 
-      if (source == null) {
-        setState(() {
-          _identityLoading = false;
-        });
-        return;
-      }
+      if (!mounted) return;
 
-      final picker = ImagePicker();
-
-      final XFile? file = await picker.pickImage(
-        source: source,
-        imageQuality: 85,
-        maxWidth: 1600,
-      );
-
-      if (file == null) {
-        setState(() {
-          _identityLoading = false;
-        });
-        return;
-      }
-
-      final result = await api.uploadIdentityDocument(
-        verificationId: verification.id,
-        file: file,
-      );
+      final latestAfterVerification = await api.getLatestIdentityVerification();
 
       if (!mounted) return;
 
       setState(() {
-        _identityVerification = result;
-        _identityLoading = false;
+        _identityVerification = latestAfterVerification;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('KTP berhasil diupload dan sedang diproses.'),
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
 
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_formatApiError(e)),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (!mounted) return;
+
       setState(() {
         _identityLoading = false;
       });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal melakukan verifikasi: $e')));
     }
   }
 
@@ -983,24 +970,28 @@ class _PatientHomePageState extends State<PatientHomePage> {
   // ==========================================================
 
   Future<void> _openProfileForm() async {
-    final profileCreated = await Navigator.of(context).push<bool>(
+    final profileSaved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => PatientProfileFormPage(authState: widget.authState),
+        builder: (_) => PatientProfileFormPage(
+          authState: widget.authState,
+          profile: profile,
+        ),
       ),
     );
 
     if (!mounted) return;
 
-    if (profileCreated == true) {
+    if (profileSaved == true) {
       await _loadHome();
     }
   }
 
   Widget _buildIdentityVerificationCard() {
     final status =
-        _identityVerification?.status ??
-        profile?.identityVerificationStatus ??
-        'NOT_VERIFIED';
+        (_identityVerification?.status ??
+                profile?.identityVerificationStatus ??
+                'NOT_VERIFIED')
+            .toUpperCase();
 
     String title;
     String description;
@@ -1011,15 +1002,19 @@ class _PatientHomePageState extends State<PatientHomePage> {
         description = 'Identitas kamu sudah berhasil diverifikasi.';
         break;
 
+      case 'PENDING':
+        title = 'Verifikasi Belum Selesai';
+        description = 'Lengkapi foto KTP dan swafoto untuk melanjutkan verifikasi identitas.';
+        break;
+
       case 'PROCESSING':
-        title = 'KTP Sedang Diproses';
-        description = 'KTP sudah diterima dan sedang diproses.';
+        title = 'Verifikasi Sedang Diproses';
+        description = 'Dokumen dan data kamu sedang diproses oleh sistem.';
         break;
 
       case 'MANUAL_REVIEW':
         title = 'KTP Sedang Diverifikasi';
-        description =
-            'Dokumen KTP sudah diterima dan sedang menunggu verifikasi admin.';
+        description = 'KTP dan swafoto sudah diterima dan sedang menunggu verifikasi admin.';
         break;
 
       case 'DATA_MISMATCH':
@@ -1029,7 +1024,18 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
       case 'DOCUMENT_REJECTED':
         title = 'KTP Ditolak';
-        description = 'Dokumen KTP tidak dapat digunakan.';
+        description = 'Dokumen KTP tidak dapat digunakan. Silakan lakukan verifikasi kembali.';
+        break;
+
+      case 'LIVENESS_FAILED':
+        title = 'Verifikasi Wajah Gagal';
+        description = 'Swafoto tidak memenuhi pemeriksaan liveness.';
+        break;
+
+      case 'FACE_MISMATCH':
+        title = 'Wajah Tidak Sesuai';
+        description =
+            'Wajah pada swafoto tidak sesuai dengan foto pada dokumen.';
         break;
 
       case 'EXPIRED':
@@ -1043,8 +1049,14 @@ class _PatientHomePageState extends State<PatientHomePage> {
     }
 
     final isVerified = status == 'VERIFIED';
-    final isProcessing = status == 'PROCESSING';
-    final isManualReview = status == 'MANUAL_REVIEW';
+    final canContinueVerification =
+        status == 'NOT_VERIFIED' ||
+        status == 'PENDING' ||
+        status == 'EXPIRED' ||
+        status == 'DOCUMENT_REJECTED' ||
+        status == 'DATA_MISMATCH' ||
+        status == 'LIVENESS_FAILED' ||
+        status == 'FACE_MISMATCH';
 
     return Card(
       child: Padding(
@@ -1072,14 +1084,14 @@ class _PatientHomePageState extends State<PatientHomePage> {
             const SizedBox(height: 8),
             Text(description),
 
-            if (!isVerified && !isProcessing && !isManualReview) ...[
+            if (canContinueVerification) ...[
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: _identityLoading
                       ? null
-                      : _startIdentityVerification,
+                      : _openIdentityVerification,
                   icon: _identityLoading
                       ? const SizedBox(
                           width: 18,
@@ -1088,7 +1100,11 @@ class _PatientHomePageState extends State<PatientHomePage> {
                         )
                       : const Icon(Icons.upload_file),
                   label: Text(
-                    _identityLoading ? 'Memproses...' : 'Verifikasi Identitas',
+                    _identityLoading
+                        ? 'Mempersiapkan verifikasi...'
+                        : status == 'PENDING'
+                        ? 'Lanjutkan Verifikasi'
+                        : 'Verifikasi Data Diri',
                   ),
                 ),
               ),

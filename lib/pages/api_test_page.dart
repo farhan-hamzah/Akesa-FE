@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
-import 'patient_home_page.dart';
+import 'role_gate_page.dart';
 
 class ApiTestPage extends StatefulWidget {
   final ClerkAuthState authState;
@@ -20,237 +20,109 @@ class _ApiTestPageState extends State<ApiTestPage> {
   String result = 'Belum ada request';
   bool loading = false;
 
-  Future<String?> getSessionToken() async {
+  // ------------------------------------------------------------ HELPERS
+
+  /// Mengambil JWT sesi Clerk. Melempar Exception bila belum login.
+  Future<String> _getSessionToken() async {
+    if (!widget.authState.isSignedIn) {
+      throw Exception('User belum login ke Clerk.');
+    }
+    final sessionToken = await widget.authState.sessionToken();
+    final jwt = sessionToken.jwt;
+    if (jwt.isEmpty) {
+      throw Exception('Session token tidak tersedia.');
+    }
+    return jwt;
+  }
+
+  Future<void> _run(
+    String startMessage,
+    Future<String> Function() action,
+  ) async {
+    if (loading) return;
+    setState(() {
+      loading = true;
+      result = startMessage;
+    });
     try {
-      if (!widget.authState.isSignedIn) {
-        if (mounted) {
-          setState(() {
-            result = 'User belum login ke Clerk.';
-          });
-        }
-
-        return null;
-      }
-
-      final sessionToken = await widget.authState.sessionToken();
-
-      return sessionToken.jwt;
+      final text = await action();
+      if (!mounted) return;
+      setState(() => result = text);
     } catch (e, stackTrace) {
-      debugPrint('Gagal mengambil Clerk token: $e');
+      debugPrint('API test error: $e');
       debugPrint('$stackTrace');
-
-      if (mounted) {
-        setState(() {
-          result = 'Gagal mendapatkan Clerk session token:\n$e';
-        });
-      }
-
-      return null;
-    }
-  }
-
-  Future<void> testHealth() async {
-    setState(() {
-      loading = true;
-      result = 'Menghubungi backend...';
-    });
-
-    try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/health'));
-
-      setState(() {
-        result = '''
-STATUS: ${response.statusCode}
-
-${response.body}
-''';
-      });
-    } catch (e) {
-      setState(() {
-        result = 'ERROR:\n$e';
-      });
+      if (!mounted) return;
+      setState(() => result = 'ERROR:\n$e');
     } finally {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
+      if (mounted) setState(() => loading = false);
     }
   }
 
-  Future<void> testMe() async {
-    setState(() {
-      loading = true;
-      result = 'Mendapatkan Clerk session token...';
-    });
-
+  String _formatResponse(http.Response response) {
+    var body = response.body;
     try {
-      final token = await getSessionToken();
-
-      if (token == null || token.isEmpty) {
-        setState(() {
-          result = 'Session token tidak tersedia.';
-        });
-        return;
-      }
-
-      debugPrint('Mengirim token ke /api/v1/me');
-
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/api/v1/me'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      );
-
-      String body = response.body;
-
-      try {
-        final json = jsonDecode(response.body);
-
-        body = const JsonEncoder.withIndent('  ').convert(json);
-      } catch (_) {
-        // Response bukan JSON
-      }
-
-      setState(() {
-        result = '''
-STATUS: ${response.statusCode}
-
-$body
-''';
-      });
-    } catch (e) {
-      setState(() {
-        result = 'ERROR:\n$e';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
+      body = const JsonEncoder.withIndent('  ').convert(jsonDecode(body));
+    } catch (_) {
+      // Response bukan JSON, tampilkan apa adanya.
     }
+    return 'STATUS: ${response.statusCode}\n\n$body';
   }
 
-  Future<void> testSync() async {
-    setState(() {
-      loading = true;
-      result = 'Mendapatkan Clerk session token...';
-    });
-
-    try {
-      final token = await getSessionToken();
-
-      if (token == null || token.isEmpty) {
-        setState(() {
-          result = 'Session token tidak tersedia.';
-        });
-        return;
-      }
-
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/v1/users/sync'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      );
-
-      String body = response.body;
-
-      try {
-        final json = jsonDecode(response.body);
-
-        body = const JsonEncoder.withIndent('  ').convert(json);
-      } catch (_) {}
-
-      setState(() {
-        result = '''
-STATUS: ${response.statusCode}
-
-$body
-''';
-      });
-    } catch (e) {
-      setState(() {
-        result = 'ERROR:\n$e';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
-    }
+  Future<String> _authedRequest(String method, String path) async {
+    final token = await _getSessionToken();
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final response = method == 'POST'
+        ? await http.post(uri, headers: headers)
+        : await http.get(uri, headers: headers);
+    return _formatResponse(response);
   }
 
-  Future<void> showSessionToken() async {
-    setState(() {
-      loading = true;
-      result = 'Mendapatkan session token...';
-    });
+  // -------------------------------------------------------------- TESTS
 
-    try {
-      final token = await getSessionToken();
+  Future<void> testHealth() => _run('Menghubungi backend...', () async {
+    final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/health'));
+    return _formatResponse(response);
+  });
 
-      if (token == null || token.isEmpty) {
-        setState(() {
-          result = 'Session token tidak tersedia.';
-        });
-        return;
-      }
+  Future<void> testMe() =>
+      _run('Mengambil data akun...', () => _authedRequest('GET', '/api/v1/me'));
 
-      setState(() {
-        result = '''
-CLERK SESSION TOKEN:
+  Future<void> testSync() => _run(
+    'Sinkronisasi akun...',
+    () => _authedRequest('POST', '/api/v1/users/sync'),
+  );
 
-$token
-''';
+  Future<void> showSessionToken() =>
+      _run('Mendapatkan session token...', () async {
+        final token = await _getSessionToken();
+        return 'CLERK SESSION TOKEN:\n\n$token';
       });
-    } catch (e) {
-      setState(() {
-        result = 'ERROR:\n$e';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
-    }
+
+  Future<void> logout() => _run('Logging out...', () async {
+    await widget.authState.signOut();
+    debugPrint('Clerk logout berhasil.');
+    return 'Logout berhasil.';
+  });
+
+  // ------------------------------------------------------ OPEN BY ROLE
+
+  /// RoleGatePage melakukan sync user, membaca role dari /api/v1/me,
+  /// lalu membuka beranda Pasien, Petugas, atau Admin.
+  void _openHomeByRole() {
+    if (loading) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => RoleGatePage(authState: widget.authState),
+      ),
+    );
   }
 
-  Future<void> logout() async {
-    try {
-      setState(() {
-        loading = true;
-        result = 'Logging out...';
-      });
-
-      await widget.authState.signOut();
-
-      debugPrint('Clerk logout berhasil.');
-    } catch (e, stackTrace) {
-      debugPrint('Gagal logout: $e');
-      debugPrint('$stackTrace');
-
-      if (mounted) {
-        setState(() {
-          result = 'Gagal logout:\n$e';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
-    }
-  }
+  // -------------------------------------------------------------- BUILD
 
   @override
   Widget build(BuildContext context) {
@@ -281,18 +153,10 @@ $token
               width: double.infinity,
               height: 48,
               child: FilledButton.icon(
-                onPressed: loading
-                    ? null
-                    : () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PatientHomePage(authState: widget.authState),
-                          ),
-                        );
-                      },
+                onPressed: loading ? null : _openHomeByRole,
                 icon: const Icon(Icons.dashboard_outlined, size: 19),
                 label: const Text(
-                  'Buka Beranda Pasien',
+                  'Buka Beranda Akun',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: FilledButton.styleFrom(

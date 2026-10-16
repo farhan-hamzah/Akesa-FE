@@ -5,6 +5,7 @@ import '../../services/akesa_api.dart';
 import '../../services/akesa_staff_admin_api.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/shared/ui_kit.dart';
+import 'admin_hospital_applications_page.dart';
 
 class AdminHospitalsTab extends StatefulWidget {
   final AkesaApi api;
@@ -49,34 +50,39 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
     }
   }
 
-  Future<void> _transition(AdminHospital h, String action, String okMsg) async {
+  Future<void> _activateHospital(AdminHospital h) async {
     if (busyId != null) return;
-    if (action == 'deactivate') {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Nonaktifkan rumah sakit?'),
-          content: Text('${h.name} akan berstatus Nonaktif.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Batal'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Nonaktifkan'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aktifkan rumah sakit?'),
+        content: Text('${h.name} akan diaktifkan dan dapat beroperasi di sistem.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primaryGreen),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Aktifkan'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
     setState(() => busyId = h.id);
     try {
-      await widget.api.adminSetHospitalStatus(h.id, action);
+      // Hit endpoint PATCH /api/v1/admin/hospitals/{id}/activate
+      final updated = await widget.api.adminActivateHospital(h.id);
+      if (!mounted) return;
+      setState(() {
+        final idx = items.indexWhere((item) => item.id == h.id);
+        if (idx != -1) items[idx] = updated;
+      });
       await _load(silent: true);
-      if (mounted) showSnack(context, okMsg);
+      if (mounted) showSnack(context, '${h.name} berhasil diaktifkan.');
     } catch (e) {
       if (mounted) showSnack(context, apiErrorMessage(e), error: true);
     } finally {
@@ -84,20 +90,54 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
     }
   }
 
-  Future<void> _create() async {
-    final created = await showAppSheet<bool>(
-      context,
-      'Tambah Rumah Sakit',
-      _HospitalFormSheet(api: widget.api),
+  Future<void> _deactivateHospital(AdminHospital h) async {
+    if (busyId != null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nonaktifkan rumah sakit?'),
+        content: Text('${h.name} akan berstatus Nonaktif.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Nonaktifkan'),
+          ),
+        ],
+      ),
     );
-    if (created == true) {
+    if (ok != true) return;
+
+    setState(() => busyId = h.id);
+    try {
+      // Hit endpoint PATCH /api/v1/admin/hospitals/{id}/deactivate
+      final updated = await widget.api.adminDeactivateHospital(h.id);
+      if (!mounted) return;
+      setState(() {
+        final idx = items.indexWhere((item) => item.id == h.id);
+        if (idx != -1) items[idx] = updated;
+      });
       await _load(silent: true);
-      if (mounted)
-        showSnack(
-          context,
-          'Rumah sakit ditambahkan dengan status Menunggu Verifikasi.',
-        );
+      if (mounted) showSnack(context, '${h.name} dinonaktifkan.');
+    } catch (e) {
+      if (mounted) showSnack(context, apiErrorMessage(e), error: true);
+    } finally {
+      if (mounted) setState(() => busyId = null);
     }
+  }
+
+  Future<void> _openApplications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminHospitalApplicationsPage(api: widget.api),
+      ),
+    );
+    _load(silent: true);
   }
 
   Future<void> _addStaff(AdminHospital h) async {
@@ -106,8 +146,9 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
       'Tambah Petugas',
       _StaffFormSheet(api: widget.api, hospital: h),
     );
-    if (added == true && mounted)
+    if (added == true && mounted) {
       showSnack(context, 'Petugas berhasil ditambahkan.');
+    }
   }
 
   int _count(String s) => items.where((h) => h.status == s).length;
@@ -116,13 +157,17 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
   Widget build(BuildContext context) {
     return TabPage(
       title: 'Rumah Sakit',
-      subtitle: 'Verifikasi, aktivasi, dan kelola petugas rumah sakit',
+      subtitle: 'Aktivasi dan kelola petugas rumah sakit terdaftar',
       child: loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primaryGreen),
             )
           : error != null
-          ? ErrorState(message: error!, onRetry: _load)
+          ? ErrorState(
+              message: error!,
+              onRetry: _load,
+              authState: widget.api.authState,
+            )
           : _buildList(),
     );
   }
@@ -145,24 +190,23 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
         children: [
           GridView.count(
-            crossAxisCount: 2,
+            crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
-            childAspectRatio: 2.7,
+            childAspectRatio: 2.2,
             children: [
-              _stat('Menunggu', _count('PENDING'), 'PENDING'),
-              _stat('Terverifikasi', _count('VERIFIED'), 'VERIFIED'),
+              _stat('Semua', items.length, null),
               _stat('Aktif', _count('ACTIVE'), 'ACTIVE'),
               _stat('Nonaktif', _count('INACTIVE'), 'INACTIVE'),
             ],
           ),
           const SizedBox(height: 14),
           GreenButton(
-            label: 'Tambah Rumah Sakit',
-            icon: Icons.add_business_outlined,
-            onPressed: _create,
+            label: 'Tinjau Pendaftaran RS',
+            icon: Icons.assignment_turned_in_outlined,
+            onPressed: _openApplications,
           ),
           const SizedBox(height: 14),
           TextField(
@@ -179,8 +223,6 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
             child: Row(
               children: [
                 _chip('Semua', null),
-                _chip('Menunggu', 'PENDING'),
-                _chip('Terverifikasi', 'VERIFIED'),
                 _chip('Aktif', 'ACTIVE'),
                 _chip('Nonaktif', 'INACTIVE'),
               ],
@@ -206,8 +248,10 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
     );
   }
 
-  Widget _stat(String label, int n, String status) {
-    final tone = hospitalTone(status);
+  Widget _stat(String label, int n, String? status) {
+    final tone = status == null
+        ? const Tone('Semua', AppColors.darkGreen, AppColors.lightGreen)
+        : hospitalTone(status);
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: () => setState(() => filter = filter == status ? null : status),
@@ -267,39 +311,6 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
     final busy = busyId == h.id;
     final actions = <Widget>[];
     switch (h.status) {
-      case 'PENDING':
-        actions.add(
-          GreenButton(
-            label: 'Verifikasi',
-            icon: Icons.verified_outlined,
-            compact: true,
-            expanded: false,
-            loading: busy,
-            onPressed: () =>
-                _transition(h, 'verify', '${h.name} terverifikasi.'),
-          ),
-        );
-        break;
-      case 'VERIFIED':
-        actions.add(
-          GreenButton(
-            label: 'Aktifkan',
-            icon: Icons.power_settings_new,
-            compact: true,
-            expanded: false,
-            loading: busy,
-            onPressed: () =>
-                _transition(h, 'activate', '${h.name} diaktifkan.'),
-          ),
-        );
-        actions.add(
-          SoftButton(
-            label: 'Tambah Petugas',
-            icon: Icons.person_add_alt,
-            onPressed: busy ? null : () => _addStaff(h),
-          ),
-        );
-        break;
       case 'ACTIVE':
         actions.add(
           SoftButton(
@@ -313,10 +324,7 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
             label: 'Nonaktifkan',
             icon: Icons.block,
             color: AppColors.errorText,
-            onPressed: busy
-                ? null
-                : () =>
-                      _transition(h, 'deactivate', '${h.name} dinonaktifkan.'),
+            onPressed: busy ? null : () => _deactivateHospital(h),
           ),
         );
         break;
@@ -328,8 +336,19 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
             compact: true,
             expanded: false,
             loading: busy,
-            onPressed: () =>
-                _transition(h, 'activate', '${h.name} diaktifkan.'),
+            onPressed: () => _activateHospital(h),
+          ),
+        );
+        break;
+      default:
+        actions.add(
+          GreenButton(
+            label: 'Aktifkan',
+            icon: Icons.power_settings_new,
+            compact: true,
+            expanded: false,
+            loading: busy,
+            onPressed: () => _activateHospital(h),
           ),
         );
         break;
@@ -376,113 +395,6 @@ class _AdminHospitalsTabState extends State<AdminHospitalsTab> {
 }
 
 // ------------------------------------------------------------------ FORMS
-class _HospitalFormSheet extends StatefulWidget {
-  final AkesaApi api;
-  const _HospitalFormSheet({required this.api});
-
-  @override
-  State<_HospitalFormSheet> createState() => _HospitalFormSheetState();
-}
-
-class _HospitalFormSheetState extends State<_HospitalFormSheet> {
-  final _form = GlobalKey<FormState>();
-  final _name = TextEditingController();
-  final _address = TextEditingController();
-  final _phone = TextEditingController();
-  final _email = TextEditingController();
-  final _reg = TextEditingController();
-  bool saving = false;
-  String? serverError;
-
-  @override
-  void dispose() {
-    for (final c in [_name, _address, _phone, _email, _reg]) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  String? _required(String? v) =>
-      (v == null || v.trim().isEmpty) ? 'Wajib diisi' : null;
-
-  Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() {
-      saving = true;
-      serverError = null;
-    });
-    try {
-      await widget.api.adminCreateHospital(
-        name: _name.text.trim(),
-        address: _address.text.trim(),
-        phone: _phone.text.trim(),
-        email: _email.text.trim(),
-        registrationNumber: _reg.text.trim(),
-      );
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) setState(() => serverError = apiErrorMessage(e));
-    } finally {
-      if (mounted) setState(() => saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const gap = SizedBox(height: 12);
-    return Form(
-      key: _form,
-      child: Column(
-        children: [
-          TextFormField(
-            controller: _name,
-            validator: _required,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(labelText: 'Nama rumah sakit'),
-          ),
-          gap,
-          TextFormField(
-            controller: _address,
-            validator: _required,
-            maxLines: 2,
-            decoration: const InputDecoration(labelText: 'Alamat'),
-          ),
-          gap,
-          TextFormField(
-            controller: _phone,
-            validator: _required,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(labelText: 'Telepon'),
-          ),
-          gap,
-          TextFormField(
-            controller: _email,
-            keyboardType: TextInputType.emailAddress,
-            validator: (v) => (v == null || !v.contains('@'))
-                ? 'Format email tidak valid'
-                : null,
-            decoration: const InputDecoration(labelText: 'Email'),
-          ),
-          gap,
-          TextFormField(
-            controller: _reg,
-            validator: _required,
-            decoration: const InputDecoration(labelText: 'Nomor registrasi'),
-          ),
-          if (serverError != null) ...[gap, InlineError(serverError!)],
-          const SizedBox(height: 16),
-          GreenButton(
-            label: 'Simpan',
-            icon: Icons.save_outlined,
-            loading: saving,
-            onPressed: _submit,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _StaffFormSheet extends StatefulWidget {
   final AkesaApi api;
   final AdminHospital hospital;

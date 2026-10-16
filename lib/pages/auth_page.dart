@@ -175,6 +175,11 @@ class _AuthFormState extends State<AuthForm> {
         debugPrint('verificationIdentifier: $verificationIdentifier');
         debugPrint('verificationStrategy: $verificationStrategy');
         debugPrint('==================================');
+      } else {
+        setState(() {
+          errorMessage = 'Email atau password yang Anda masukkan salah.';
+        });
+        return;
       }
     } catch (e, stackTrace) {
       debugPrint('========== CLERK LOGIN ERROR ==========');
@@ -739,33 +744,83 @@ class _AuthFormState extends State<AuthForm> {
     );
   }
 
+  Future<void> _openForgotPassword() async {
+    final email = emailController.text.trim();
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ForgotPasswordSheet(
+        authState: widget.authState,
+        initialEmail: email,
+      ),
+    );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password berhasil diubah. Silakan masuk dengan password baru.'),
+          backgroundColor: primaryGreen,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   // ============================================================
   // REMEMBER ME
   // ============================================================
 
   Widget _buildRememberMe() {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        SizedBox(
-          width: 24,
-          height: 24,
-          child: Checkbox(
-            value: rememberMe,
-            activeColor: primaryGreen,
-            onChanged: loading
-                ? null
-                : (value) {
-                    setState(() {
-                      rememberMe = value ?? false;
-                    });
-                  },
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                value: rememberMe,
+                activeColor: primaryGreen,
+                onChanged: loading
+                    ? null
+                    : (value) {
+                        setState(() {
+                          rememberMe = value ?? false;
+                        });
+                      },
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              'Ingat aku',
+              style: TextStyle(
+                color: Color(0xFF40553D),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        if (isLogin)
+          TextButton(
+            onPressed: loading ? null : _openForgotPassword,
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Lupa password?',
+              style: TextStyle(
+                color: primaryGreen,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-        ),
-        const SizedBox(width: 4),
-        const Text(
-          'Ingat aku',
-          style: TextStyle(color: Color(0xFF40553D), fontSize: 12, fontWeight: FontWeight.w500),
-        ),
       ],
     );
   }
@@ -1162,3 +1217,404 @@ class _AuthFormState extends State<AuthForm> {
     );
   }
 }
+
+// ============================================================
+// FORGOT PASSWORD SHEET
+// ============================================================
+
+class _ForgotPasswordSheet extends StatefulWidget {
+  final ClerkAuthState authState;
+  final String initialEmail;
+
+  const _ForgotPasswordSheet({
+    required this.authState,
+    required this.initialEmail,
+  });
+
+  @override
+  State<_ForgotPasswordSheet> createState() => _ForgotPasswordSheetState();
+}
+
+class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
+  static const Color primaryGreen = Color(0xFF4D8F00);
+  static const Color darkGreen = Color(0xFF185C22);
+
+  late final TextEditingController _emailController =
+      TextEditingController(text: widget.initialEmail);
+  final _codeController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+
+  int step = 0; // 0 = kirim OTP, 1 = input OTP & password baru
+  bool loading = false;
+  String? error;
+  bool newPasswordVisible = false;
+  bool confirmPasswordVisible = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _codeController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  static final RegExp _emailRegex =
+      RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+
+  Future<void> _sendCode() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() => error = 'Email wajib diisi.');
+      return;
+    }
+
+    if (!_emailRegex.hasMatch(email)) {
+      setState(() => error = 'Format email tidak valid. Masukkan email yang benar.');
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      error = null;
+    });
+
+    try {
+      // Bersihkan sesi sign-in sebelumnya untuk memulai proses reset yang bersih
+      await widget.authState.resetClient();
+
+      // Panggil API resmi Clerk untuk inisiasi reset password
+      // Ini yang secara otomatis mengirimkan kode OTP ke email pengguna
+      await widget.authState.initiatePasswordReset(
+        identifier: email,
+        strategy: clerk.Strategy.resetPasswordEmailCode,
+      );
+
+      debugPrint('========== FORGOT PASSWORD OTP SENT ==========');
+      debugPrint('signIn status: ${widget.authState.signIn?.status}');
+      debugPrint('==============================================');
+
+      if (!mounted) return;
+      setState(() {
+        step = 1;
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        error = _formatError(e);
+        loading = false;
+      });
+    }
+  }
+
+  Future<void> _resendCode() async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+
+    try {
+      await widget.authState.resendCode(clerk.Strategy.resetPasswordEmailCode);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Kode OTP berhasil dikirim ulang ke email.'),
+          backgroundColor: primaryGreen,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        error = _formatError(e);
+      });
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final code = _codeController.text.trim();
+    final newPass = _newPasswordController.text;
+    final confirmPass = _confirmPasswordController.text;
+
+    if (code.isEmpty) {
+      setState(() => error = 'Kode verifikasi OTP wajib diisi.');
+      return;
+    }
+    if (newPass.isEmpty || confirmPass.isEmpty) {
+      setState(() => error = 'Password baru dan konfirmasi wajib diisi.');
+      return;
+    }
+    if (newPass.length < 8) {
+      setState(() => error = 'Password minimal 8 karakter.');
+      return;
+    }
+    if (newPass != confirmPass) {
+      setState(() => error = 'Konfirmasi password tidak cocok.');
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      error = null;
+    });
+
+    try {
+      await widget.authState.attemptSignIn(
+        strategy: clerk.Strategy.resetPasswordEmailCode,
+        code: code,
+        password: newPass,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        error = _formatError(e);
+        loading = false;
+      });
+    }
+  }
+
+  String _formatError(Object e) {
+    final msg = e.toString().toLowerCase();
+    debugPrint('Forgot password error: $e');
+    if (msg.contains('identifier_not_found') ||
+        msg.contains('couldn\'t find your account') ||
+        msg.contains('user not found') ||
+        msg.contains('form_identifier_not_found')) {
+      return 'Email ini belum terdaftar di sistem kami.';
+    }
+    if (msg.contains('code_incorrect') ||
+        msg.contains('incorrect') ||
+        msg.contains('verification_failed')) {
+      return 'Kode OTP salah atau tidak cocok.';
+    }
+    if (msg.contains('code_expired') || msg.contains('expired')) {
+      return 'Kode OTP sudah kedaluwarsa. Silakan klik "Kirim ulang kode".';
+    }
+    if (msg.contains('password_too_short') ||
+        msg.contains('password_weak') ||
+        msg.contains('password')) {
+      return 'Password baru minimal 8 karakter dan harus memenuhi syarat keamanan Clerk.';
+    }
+    if (msg.contains('socketexception') || msg.contains('timeout')) {
+      return 'Koneksi jaringan bermasalah. Periksa koneksi internet Anda.';
+    }
+    return 'Gagal memproses: ${_cleanErrorMessage(e)}';
+  }
+
+  String _cleanErrorMessage(Object e) {
+    final raw = e.toString();
+    if (raw.startsWith('Exception: ')) {
+      return raw.substring(11);
+    }
+    return raw;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        14,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF5E8),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.lock_reset, color: primaryGreen, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Atur Ulang Password',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: darkGreen,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        step == 0
+                            ? 'Langkah 1 dari 2: Verifikasi Email'
+                            : 'Langkah 2 dari 2: Password Baru',
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              step == 0
+                  ? 'Masukkan email yang terdaftar. Kami akan mengirimkan kode verifikasi 6 digit untuk mereset kata sandi Anda.'
+                  : 'Masukkan kode verifikasi yang telah dikirim ke email ${_emailController.text.trim()}, lalu buat kata sandi baru Anda.',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.4),
+            ),
+            const SizedBox(height: 18),
+
+            if (step == 0) ...[
+              const Text(
+                'Email',
+                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 6),
+              AuthTextField(
+                controller: _emailController,
+                hintText: 'Email Anda',
+                icon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 14),
+            ] else ...[
+              const Text(
+                'Kode OTP Verifikasi',
+                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 6),
+              AuthTextField(
+                controller: _codeController,
+                hintText: 'Contoh: 123456',
+                icon: Icons.pin_outlined,
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Password Baru',
+                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 6),
+              AuthTextField(
+                controller: _newPasswordController,
+                hintText: 'Minimal 8 karakter',
+                icon: Icons.lock_outline,
+                obscureText: !newPasswordVisible,
+                onToggleVisibility: () {
+                  setState(() => newPasswordVisible = !newPasswordVisible);
+                },
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Konfirmasi Password Baru',
+                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 6),
+              AuthTextField(
+                controller: _confirmPasswordController,
+                hintText: 'Ulangi password baru',
+                icon: Icons.lock_outline,
+                obscureText: !confirmPasswordVisible,
+                onToggleVisibility: () {
+                  setState(() => confirmPasswordVisible = !confirmPasswordVisible);
+                },
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton(
+                    onPressed: loading ? null : () => setState(() => step = 0),
+                    child: const Text('Ganti email', style: TextStyle(fontSize: 12, color: primaryGreen)),
+                  ),
+                  TextButton(
+                    onPressed: loading ? null : _resendCode,
+                    child: const Text('Kirim ulang kode', style: TextStyle(fontSize: 12, color: primaryGreen)),
+                  ),
+                ],
+              ),
+            ],
+
+            if (error != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF2F2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFFD0D0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, size: 16, color: Colors.redAccent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        error!,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFFB42318)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton(
+                onPressed: loading ? null : (step == 0 ? _sendCode : _resetPassword),
+                style: FilledButton.styleFrom(
+                  backgroundColor: primaryGreen,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(
+                        step == 0 ? 'Kirim Kode Verifikasi' : 'Simpan Password Baru',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

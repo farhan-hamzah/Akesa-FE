@@ -14,6 +14,7 @@ import '../models/identity_verification_data.dart';
 
 import 'patient_profile_form_page.dart';
 import 'identify_verification_page.dart';
+import 'auth_page.dart';
 
 import '../widgets/patient/access_request_card.dart';
 import '../widgets/patient/history_card.dart';
@@ -567,6 +568,12 @@ class _PatientHomePageState extends State<PatientHomePage> {
       await widget.authState.signOut();
     } catch (e) {
       debugPrint('Logout error: $e');
+    }
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthPage()),
+        (route) => false,
+      );
     }
   }
 
@@ -1375,6 +1382,19 @@ class _PatientHomePageState extends State<PatientHomePage> {
               onPressed: _loadHome,
               style: FilledButton.styleFrom(backgroundColor: primaryGreen),
               child: const Text('Coba Lagi'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _logout,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                side: const BorderSide(color: Color(0xFFFFCDD2)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              icon: const Icon(Icons.logout, size: 16),
+              label: const Text('Keluar (Logout)'),
             ),
           ],
         ),

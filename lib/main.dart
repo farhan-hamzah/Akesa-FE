@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 
@@ -24,6 +26,14 @@ class AkesaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Akesa',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.trackpad,
+        },
+      ),
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: akesaGreen),

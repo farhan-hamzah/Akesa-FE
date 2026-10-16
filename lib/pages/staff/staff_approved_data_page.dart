@@ -150,7 +150,11 @@ class _StaffApprovedDataPageState extends State<StaffApprovedDataPage> {
         ],
       );
     }
-    return ErrorState(message: apiErrorMessage(e!), onRetry: _load);
+    return ErrorState(
+      message: apiErrorMessage(e!),
+      onRetry: _load,
+      authState: widget.api.authState,
+    );
   }
 
   Widget _buildData() {

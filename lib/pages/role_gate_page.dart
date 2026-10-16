@@ -59,7 +59,11 @@ class _RoleGatePageState extends State<RoleGatePage> {
     if (error != null) {
       return Scaffold(
         body: SafeArea(
-          child: ErrorState(message: error!, onRetry: _load),
+          child: ErrorState(
+            message: error!,
+            onRetry: _load,
+            authState: widget.authState,
+          ),
         ),
       );
     }
@@ -77,6 +81,7 @@ class _RoleGatePageState extends State<RoleGatePage> {
               message:
                   'Peran akun tidak dikenali ("${role ?? '-'}"). Hubungi administrator.',
               onRetry: _load,
+              authState: widget.authState,
             ),
           ),
         );

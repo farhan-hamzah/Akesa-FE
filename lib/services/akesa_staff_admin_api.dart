@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
@@ -30,10 +31,9 @@ extension StaffAdminApi on AkesaApi {
       headers['Authorization'] = 'Bearer $token';
     }
 
-    final request = http.Request(
-      method,
-      Uri.parse('${ApiConfig.baseUrl}$path'),
-    );
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    debugPrint('[AkesaStaffAdminApi] --> $method $uri');
+    final request = http.Request(method, uri);
     request.headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
 
@@ -43,6 +43,7 @@ extension StaffAdminApi on AkesaApi {
         const Duration(seconds: 20),
       );
       response = await http.Response.fromStream(streamed);
+      debugPrint('[AkesaStaffAdminApi] <-- ${response.statusCode} $path');
     } on TimeoutException {
       throw ApiException(408, 'Server tidak merespons. Coba lagi.');
     }
@@ -81,7 +82,7 @@ extension StaffAdminApi on AkesaApi {
     return null;
   }
 
-  // --------------------------------------------------------------- ADMIN
+  // --------------------------------------------------------------- ADMIN HOSPITALS
   Future<List<AdminHospital>> adminGetHospitals() async {
     final json = await _send('GET', '/api/v1/admin/hospitals');
     if (json is! List) return [];
@@ -91,31 +92,71 @@ extension StaffAdminApi on AkesaApi {
         .toList();
   }
 
-  Future<AdminHospital> adminCreateHospital({
-    required String name,
-    required String address,
-    required String phone,
-    required String email,
-    required String registrationNumber,
-  }) async {
-    final json = await _send(
-      'POST',
-      '/api/v1/admin/hospitals',
-      body: {
-        'name': name,
-        'address': address,
-        'phone': phone,
-        'email': email,
-        'registrationNumber': registrationNumber,
-      },
-    );
+  /// PATCH /api/v1/admin/hospitals/{id}/activate
+  Future<AdminHospital> adminActivateHospital(String id) async {
+    final json = await _send('PATCH', '/api/v1/admin/hospitals/$id/activate');
     return AdminHospital.fromJson(Map<String, dynamic>.from(json));
   }
 
-  /// action: 'verify' | 'activate' | 'deactivate'
+  /// PATCH /api/v1/admin/hospitals/{id}/deactivate
+  Future<AdminHospital> adminDeactivateHospital(String id) async {
+    final json = await _send('PATCH', '/api/v1/admin/hospitals/$id/deactivate');
+    return AdminHospital.fromJson(Map<String, dynamic>.from(json));
+  }
+
+  /// action: 'activate' | 'deactivate'
   Future<AdminHospital> adminSetHospitalStatus(String id, String action) async {
+    if (action == 'activate') return adminActivateHospital(id);
+    if (action == 'deactivate') return adminDeactivateHospital(id);
     final json = await _send('PATCH', '/api/v1/admin/hospitals/$id/$action');
     return AdminHospital.fromJson(Map<String, dynamic>.from(json));
+  }
+
+  // --------------------------------------------------- HOSPITAL APPLICATIONS
+  Future<List<HospitalApplication>> adminGetHospitalApplications({
+    String? status,
+  }) async {
+    final query =
+        (status != null && status.isNotEmpty) ? '?status=$status' : '';
+    final json = await _send('GET', '/api/v1/admin/hospital-applications$query');
+    if (json is! List) return [];
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(HospitalApplication.fromJson)
+        .toList();
+  }
+
+  Future<HospitalApplication> adminGetHospitalApplicationDetail(
+    String id,
+  ) async {
+    final json = await _send('GET', '/api/v1/admin/hospital-applications/$id');
+    return HospitalApplication.fromJson(Map<String, dynamic>.from(json));
+  }
+
+  Future<dynamic> adminApproveHospitalApplication(String id) async {
+    return await _send('POST', '/api/v1/admin/hospital-applications/$id/approve');
+  }
+
+  Future<dynamic> adminRequestRevisionHospitalApplication(
+    String id, {
+    required String notes,
+  }) async {
+    return await _send(
+      'POST',
+      '/api/v1/admin/hospital-applications/$id/request-revision',
+      body: {'notes': notes},
+    );
+  }
+
+  Future<dynamic> adminRejectHospitalApplication(
+    String id, {
+    required String notes,
+  }) async {
+    return await _send(
+      'POST',
+      '/api/v1/admin/hospital-applications/$id/reject',
+      body: {'notes': notes},
+    );
   }
 
   Future<void> adminAddStaff({

@@ -1,6 +1,8 @@
+import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/api_exception.dart';
+import '../../pages/auth_page.dart';
 import '../../theme/app_colors.dart';
 
 const Color kBg = Color(0xFFFDFEFC);
@@ -131,20 +133,45 @@ class Tone {
   const Tone(this.label, this.fg, this.bg);
 }
 
-Tone hospitalTone(String status) {
+Tone hospitalApplicationTone(String status) {
   switch (status.toUpperCase()) {
-    case 'PENDING':
+    case 'PENDING_REVIEW':
       return const Tone(
-        'Menunggu Verifikasi',
+        'Menunggu Tinjauan',
         Color(0xFF9A6700),
         Color(0xFFFFF4D6),
       );
-    case 'VERIFIED':
-      return const Tone('Terverifikasi', Color(0xFF0B5CAD), Color(0xFFE3F0FF));
+    case 'REVISION_REQUIRED':
+      return const Tone(
+        'Perlu Revisi',
+        Color(0xFFC05621),
+        Color(0xFFFEEBC8),
+      );
+    case 'REJECTED':
+      return const Tone(
+        'Ditolak',
+        Color(0xFFC53030),
+        Color(0xFFFED7D7),
+      );
+    case 'APPROVED':
+      return const Tone('Disetujui', AppColors.darkGreen, AppColors.lightGreen);
+    default:
+      return Tone(status, kMuted, const Color(0xFFEDEFEC));
+  }
+}
+
+Tone hospitalTone(String status) {
+  switch (status.toUpperCase()) {
     case 'ACTIVE':
       return const Tone('Aktif', AppColors.darkGreen, AppColors.lightGreen);
     case 'INACTIVE':
       return const Tone('Nonaktif', Color(0xFF5F6B5D), Color(0xFFEDEFEC));
+    case 'PENDING':
+      return const Tone(
+        'Menunggu',
+        Color(0xFF9A6700),
+        Color(0xFFFFF4D6),
+      );
     default:
       return Tone(status, kMuted, const Color(0xFFEDEFEC));
   }
@@ -326,58 +353,113 @@ class EmptyState extends StatelessWidget {
   );
 }
 
+/// Helper global untuk melakukan proses logout dan membersihkan seluruh
+/// navigation stack kembali ke halaman login (AuthPage).
+Future<void> performLogout(BuildContext context, ClerkAuthState authState) async {
+  try {
+    await authState.signOut();
+  } catch (e) {
+    debugPrint('Logout error: $e');
+  }
+  if (context.mounted) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthPage()),
+      (route) => false,
+    );
+  }
+}
+
 class ErrorState extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
-  const ErrorState({super.key, required this.message, required this.onRetry});
+  final VoidCallback? onLogout;
+  final ClerkAuthState? authState;
+
+  const ErrorState({
+    super.key,
+    required this.message,
+    required this.onRetry,
+    this.onLogout,
+    this.authState,
+  });
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              color: AppColors.errorBackground,
-              borderRadius: BorderRadius.circular(22),
+  Widget build(BuildContext context) {
+    final isSessionError = message.toLowerCase().contains('sesi login') ||
+        message.toLowerCase().contains('unauthorized') ||
+        message.toLowerCase().contains('401');
+
+    final VoidCallback? effectiveLogout = onLogout ??
+        (authState != null ? () => performLogout(context, authState!) : null);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: isSessionError
+                    ? const Color(0xFFFFF3E0)
+                    : AppColors.errorBackground,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Icon(
+                isSessionError
+                    ? Icons.lock_clock_outlined
+                    : Icons.cloud_off_outlined,
+                color: isSessionError
+                    ? const Color(0xFFE65100)
+                    : Colors.redAccent,
+                size: 32,
+              ),
             ),
-            child: const Icon(
-              Icons.cloud_off_outlined,
-              color: Colors.redAccent,
-              size: 32,
+            const SizedBox(height: 16),
+            Text(
+              isSessionError ? 'Sesi Telah Berakhir' : 'Gagal memuat data',
+              style: const TextStyle(
+                color: AppColors.textGreen,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Gagal memuat data',
-            style: TextStyle(
-              color: AppColors.textGreen,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+            const SizedBox(height: 6),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: kMuted, fontSize: 12, height: 1.5),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: kMuted, fontSize: 12, height: 1.5),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: onRetry,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primaryGreen,
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onRetry,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryGreen,
+              ),
+              child: const Text('Coba Lagi'),
             ),
-            child: const Text('Coba Lagi'),
-          ),
-        ],
+            if (effectiveLogout != null) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: effectiveLogout,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  side: const BorderSide(color: Color(0xFFFFCDD2)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                icon: const Icon(Icons.logout, size: 16),
+                label: const Text('Keluar (Logout)'),
+              ),
+            ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Tombol hijau bergradasi (sama dengan tombol di halaman auth).

@@ -40,10 +40,8 @@ class AccountTab extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    try {
-      await authState.signOut();
-    } catch (e) {
-      debugPrint('Logout error: $e');
+    if (context.mounted) {
+      await performLogout(context, authState);
     }
   }
 

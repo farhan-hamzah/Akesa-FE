@@ -78,7 +78,11 @@ class _StaffRequestsTabState extends State<StaffRequestsTab> {
               child: CircularProgressIndicator(color: AppColors.primaryGreen),
             )
           : error != null
-          ? ErrorState(message: error!, onRetry: _load)
+          ? ErrorState(
+              message: error!,
+              onRetry: _load,
+              authState: widget.api.authState,
+            )
           : _buildList(),
     );
   }

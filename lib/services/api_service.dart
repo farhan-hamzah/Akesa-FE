@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../config/api_config.dart';
+
 class ApiService {
-  static const String baseUrl = 'http://10.0.2.2:8080';
+  static String get baseUrl => ApiConfig.baseUrl;
 
   final Future<String?> Function() getSessionToken;
 

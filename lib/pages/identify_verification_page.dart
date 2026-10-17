@@ -1,0 +1,751 @@
+import 'dart:io';
+
+import 'package:clerk_flutter/clerk_flutter.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../models/api_exception.dart';
+import '../models/identity_verification_data.dart';
+import '../services/akesa_api.dart';
+
+class IdentityVerificationPage extends StatefulWidget {
+  final ClerkAuthState authState;
+  final String verificationId;
+
+  const IdentityVerificationPage({
+    super.key,
+    required this.authState,
+    required this.verificationId,
+  });
+
+  @override
+  State<IdentityVerificationPage> createState() =>
+      _IdentityVerificationPageState();
+}
+
+class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
+  static const Color primaryGreen = Color(0xFF4D8F00);
+  static const Color darkGreen = Color(0xFF185C22);
+  static const Color textGreen = Color(0xFF294529);
+
+  late final AkesaApi api;
+
+  final ImagePicker _picker = ImagePicker();
+
+  int currentStep = 0;
+
+  XFile? ktpImage;
+  XFile? selfieImage;
+
+  bool ktpUploaded = false;
+  bool selfieUploaded = false;
+
+  bool uploadingKtp = false;
+  bool uploadingSelfie = false;
+
+  bool loadingVerification = true;
+
+  IdentityVerificationData? verification;
+
+  @override
+  void initState() {
+    super.initState();
+
+    api = AkesaApi(authState: widget.authState);
+
+    _loadVerification();
+  }
+
+  // ==========================================================
+  // Load Verification
+  // ==========================================================
+
+  Future<void> _loadVerification() async {
+    try {
+      final result = await api.getIdentityVerification(widget.verificationId);
+
+      if (!mounted) return;
+
+      setState(() {
+        verification = result;
+
+        ktpUploaded = result.documentUploaded;
+        selfieUploaded = result.selfieUploaded;
+
+        if (selfieUploaded) {
+          currentStep = 1;
+        } else {
+          currentStep = 0;
+        }
+
+        loadingVerification = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        loadingVerification = false;
+      });
+
+      _showError(_formatError(e));
+    }
+  }
+
+  // ==========================================================
+  // IMAGE PICKER
+  // ==========================================================
+
+  Future<void> _pickKtp(ImageSource source) async {
+    try {
+      final file = await _picker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+
+      if (file == null) return;
+
+      if (!mounted) return;
+
+      setState(() {
+        ktpImage = file;
+      });
+    } catch (e) {
+      _showError('Gagal mengambil foto KTP.');
+    }
+  }
+
+  Future<void> _showKtpSourcePicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.camera_alt_outlined,
+                    color: primaryGreen,
+                  ),
+                  title: const Text('Ambil Foto KTP'),
+                  subtitle: const Text(
+                    'Gunakan kamera untuk mengambil foto KTP',
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickKtp(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: primaryGreen,
+                  ),
+                  title: const Text('Upload dari Galeri'),
+                  subtitle: const Text('Pilih foto KTP dari perangkat'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickKtp(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ==========================================================
+  // UPLOAD KTP
+  // ==========================================================
+
+  Future<void> _uploadKtp() async {
+    final image = ktpImage;
+
+    if (image == null) {
+      _showError('Silakan pilih foto KTP terlebih dahulu.');
+      return;
+    }
+
+    if (uploadingKtp) return;
+
+    setState(() {
+      uploadingKtp = true;
+    });
+
+    try {
+      final result = await api.uploadIdentityDocument(
+        verificationId: widget.verificationId,
+        file: image,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        verification = result;
+        ktpUploaded = result.documentUploaded;
+        uploadingKtp = false;
+        currentStep = 1;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Foto KTP berhasil disimpan. Silakan lanjutkan dengan swafoto.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        uploadingKtp = false;
+      });
+
+      _showError(_formatError(e));
+    }
+  }
+
+  // ==========================================================
+  // SELFIE
+  // ==========================================================
+
+  Future<void> _uploadSelfie() async {
+    final image = selfieImage;
+
+    if (image == null) {
+      _showError('Silakan ambil foto selfie terlebih dahulu.');
+      return;
+    }
+
+    if (!ktpUploaded) {
+      _showError('Silakan ambil foto KTP terlebih dahulu.');
+      return;
+    }
+
+    if (uploadingSelfie) return;
+
+    setState(() {
+      uploadingSelfie = true;
+    });
+
+    try {
+      final result = await api.uploadIdentitySelfie(
+        verificationId: widget.verificationId,
+        file: image,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        verification = result;
+        selfieUploaded = result.selfieUploaded;
+        uploadingSelfie = false;
+      });
+
+      if (result.selfieUploaded && result.documentUploaded) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Swafoto berhasil dikirim.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        uploadingSelfie = false;
+      });
+
+      _showError(_formatError(e));
+    }
+  }
+
+  Future<void> _pickSelfie() async {
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1200,
+        preferredCameraDevice: CameraDevice.front,
+      );
+
+      if (file == null) return;
+
+      if (!mounted) return;
+
+      setState(() {
+        selfieImage = file;
+      });
+    } catch (e) {
+      _showError('Gagal mengambil foto selfie.');
+    }
+  }
+
+  // ==========================================================
+  // UI
+  // ==========================================================
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: darkGreen),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Verifikasi Data Diri',
+          style: TextStyle(
+            color: darkGreen,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      body: Column(
+        children: [
+          _buildTabs(),
+          Expanded(
+            child: IndexedStack(
+              index: currentStep,
+              children: [_buildKtpTab(), _buildSelfieTab()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabs() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE5EAE4))),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _buildTab(label: 'Verifikasi KTP', index: 0)),
+          Expanded(
+            child: _buildTab(
+              label: ktpUploaded ? 'Swafoto' : '🔒 Swafoto',
+              index: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTab({required String label, required int index}) {
+    final selected = currentStep == index;
+    final enabled = index == 0 || ktpUploaded;
+
+    return InkWell(
+      onTap: enabled
+          ? () {
+              setState(() {
+                currentStep = index;
+              });
+            }
+          : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? primaryGreen : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: selected
+                ? primaryGreen
+                : enabled
+                ? const Color(0xFF8A9589)
+                : const Color(0xFFC5CCC3),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // KTP TAB
+  // ==========================================================
+
+  Widget _buildKtpTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildKtpPreview(),
+          const SizedBox(height: 20),
+
+          const Text(
+            'Posisikan KTP Anda di Dalam Bingkai',
+            style: TextStyle(
+              color: textGreen,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+
+          const SizedBox(height: 7),
+
+          const Text(
+            'Pastikan informasi pada KTP dapat terlihat dengan jelas.',
+            style: TextStyle(
+              color: Color(0xFF7B877A),
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildInstruction('Pastikan seluruh bagian KTP terlihat.'),
+          _buildInstruction('Gunakan pencahayaan yang cukup.'),
+          _buildInstruction('Pastikan foto tidak blur atau terlalu gelap.'),
+
+          const SizedBox(height: 24),
+
+          if (ktpImage == null)
+            _buildPrimaryButton(
+              label: 'Pilih Foto KTP',
+              icon: Icons.add_a_photo_outlined,
+              onPressed: _showKtpSourcePicker,
+            )
+          else ...[
+            _buildPrimaryButton(
+              label: uploadingKtp
+                  ? 'Menyimpan Foto...'
+                  : 'Simpan & Lanjut ke Swafoto',
+              icon: uploadingKtp ? null : Icons.arrow_forward,
+              loading: uploadingKtp,
+              onPressed: uploadingKtp ? null : _uploadKtp,
+            ),
+
+            const SizedBox(height: 10),
+
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton(
+                onPressed: uploadingKtp ? null : _showKtpSourcePicker,
+                child: const Text('Ambil Ulang / Ganti Foto'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKtpPreview() {
+    if (ktpImage != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: AspectRatio(
+          aspectRatio: 1.58,
+          child: Image.file(File(ktpImage!.path), fit: BoxFit.cover),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7F3),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD9E4D6)),
+      ),
+      child: AspectRatio(
+        aspectRatio: 1.58,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 62,
+              height: 62,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEAF5E8),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.badge_outlined,
+                size: 32,
+                color: primaryGreen,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Foto KTP belum dipilih',
+              style: TextStyle(
+                color: textGreen,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstruction(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle_outline, size: 15, color: primaryGreen),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF657263),
+                fontSize: 11,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // SELFIE TAB
+  // ==========================================================
+
+  Widget _buildBackToKtpButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 46,
+      child: OutlinedButton.icon(
+        onPressed: uploadingSelfie
+            ? null
+            : () {
+                setState(() {
+                  currentStep = 0;
+                });
+              },
+        icon: const Icon(Icons.arrow_back),
+        label: const Text(
+          'Kembali ke Foto KTP',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: primaryGreen,
+          side: const BorderSide(color: Color(0xFFBFD8B9)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelfieTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSelfiePreview(),
+
+          const SizedBox(height: 20),
+
+          const Text(
+            'Posisikan Wajah Anda',
+            style: TextStyle(
+              color: textGreen,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+
+          const SizedBox(height: 7),
+
+          const Text(
+            'Gunakan kamera depan dan pastikan wajah terlihat jelas.',
+            style: TextStyle(
+              color: Color(0xFF7B877A),
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildInstruction('Pastikan wajah berada di tengah.'),
+          _buildInstruction('Lepaskan masker atau benda yang menutupi wajah.'),
+          _buildInstruction('Gunakan pencahayaan yang cukup.'),
+
+          const SizedBox(height: 24),
+
+          if (selfieImage == null)
+            _buildPrimaryButton(
+              label: 'Ambil Swafoto',
+              icon: Icons.camera_front_outlined,
+              onPressed: _pickSelfie,
+            )
+          else ...[
+            _buildPrimaryButton(
+              label: uploadingSelfie
+                  ? 'Mengirim Verifikasi...'
+                  : 'Kirim Verifikasi',
+              icon: uploadingSelfie ? null : Icons.verified_outlined,
+              loading: uploadingSelfie,
+              onPressed: uploadingSelfie ? null : _uploadSelfie,
+            ),
+
+            const SizedBox(height: 10),
+
+            _buildBackToKtpButton(),
+
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton(
+                onPressed: uploadingSelfie ? null : _pickSelfie,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFBFD8B9)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Ambil Ulang Swafoto',
+                  style: TextStyle(
+                    color: primaryGreen,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelfiePreview() {
+    if (selfieImage != null) {
+      return Center(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            width: 230,
+            height: 280,
+            child: Image.file(File(selfieImage!.path), fit: BoxFit.cover),
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: Container(
+        width: 230,
+        height: 280,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF4F7F3),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFD9E4D6)),
+        ),
+        child: const Icon(
+          Icons.face_outlined,
+          size: 80,
+          color: Color(0xFF91A68D),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // BUTTON
+  // ==========================================================
+
+  Widget _buildPrimaryButton({
+    required String label,
+    required VoidCallback? onPressed,
+    IconData? icon,
+    bool loading = false,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 46,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: primaryGreen,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Icon(icon),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // HELPERS
+  // ==========================================================
+
+  String _formatError(Object error) {
+    if (error is ApiException) {
+      if (error.statusCode == 401) {
+        return 'Sesi login sudah tidak tersedia.';
+      }
+
+      if (error.statusCode == 403) {
+        return 'Anda tidak memiliki akses untuk melakukan verifikasi.';
+      }
+
+      return error.message;
+    }
+
+    return 'Terjadi kesalahan. Silakan coba lagi.';
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+}

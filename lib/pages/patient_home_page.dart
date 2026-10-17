@@ -50,6 +50,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
   PatientProfileData? profile;
   PatientQr? patientQr;
+  bool _isPromptOpen = false;
 
   bool qrLoading = false;
   bool qrRotating = false;
@@ -133,6 +134,14 @@ class _PatientHomePageState extends State<PatientHomePage> {
         _identityVerification = loadedIdentityVerification;
         patientQr = null;
       });
+
+      if (loadedProfile == null && selectedIndex == 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && selectedIndex == 0 && profile == null) {
+            _showCompleteProfilePrompt();
+          }
+        });
+      }
     } catch (e) {
       debugPrint('Gagal load Patient Home: $e');
 
@@ -316,6 +325,11 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
   Future<void> _showPatientQr() async {
     if (qrLoading) return;
+
+    if (profile == null) {
+      _showCompleteProfilePrompt();
+      return;
+    }
 
     final authenticated = await _authenticateForQr();
     if (!authenticated) return;
@@ -662,6 +676,12 @@ class _PatientHomePageState extends State<PatientHomePage> {
           children: [
             _buildHeader(),
             const SizedBox(height: 4),
+            if (profile == null) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
+                child: _buildProfileIncompleteBanner(),
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: PatientCodeCard(
@@ -982,6 +1002,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
         builder: (_) => PatientProfileFormPage(
           authState: widget.authState,
           profile: profile,
+          identityVerification: _identityVerification,
         ),
       ),
     );
@@ -991,6 +1012,114 @@ class _PatientHomePageState extends State<PatientHomePage> {
     if (profileSaved == true) {
       await _loadHome();
     }
+  }
+
+  Future<void> _showCompleteProfilePrompt() async {
+    if (_isPromptOpen || !mounted || profile != null) return;
+    _isPromptOpen = true;
+
+    try {
+      final fillNow = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => const _CompleteProfilePromptSheet(),
+      );
+
+      if (fillNow == true && mounted) {
+        await _openProfileForm();
+      }
+    } finally {
+      _isPromptOpen = false;
+    }
+  }
+
+  Widget _buildProfileIncompleteBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FDF7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFCFE5C9)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: lightGreen,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.assignment_late_outlined,
+              color: primaryGreen,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Profil Belum Lengkap',
+                  style: TextStyle(
+                    color: textGreen,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Lengkapi data profil pasien Anda untuk mengaktifkan kode QR dan mengakses layanan medis.',
+                  style: TextStyle(
+                    color: Color(0xFF5E6D5D),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: primaryGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: _openProfileForm,
+                    child: const Text(
+                      'Lengkapi Sekarang',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildIdentityVerificationCard() {
@@ -1206,10 +1335,13 @@ class _PatientHomePageState extends State<PatientHomePage> {
             height: 46,
             child: OutlinedButton.icon(
               onPressed: _openProfileForm,
-              icon: const Icon(Icons.edit_outlined, color: primaryGreen),
-              label: const Text(
-                'Edit Profil Pasien',
-                style: TextStyle(
+              icon: Icon(
+                patient == null ? Icons.add_circle_outline : Icons.edit_outlined,
+                color: primaryGreen,
+              ),
+              label: Text(
+                patient == null ? 'Lengkapi Profil Pasien' : 'Edit Profil Pasien',
+                style: const TextStyle(
                   color: primaryGreen,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1417,7 +1549,13 @@ class _PatientHomePageState extends State<PatientHomePage> {
           selectedIndex = index;
         });
 
-        if (index == 1 && history.isEmpty && !historyLoading) {
+        if (index == 0 && profile == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && selectedIndex == 0 && profile == null) {
+              _showCompleteProfilePrompt();
+            }
+          });
+        } else if (index == 1 && history.isEmpty && !historyLoading) {
           await _loadHistory();
         }
       },
@@ -1440,6 +1578,116 @@ class _PatientHomePageState extends State<PatientHomePage> {
           label: 'Profil',
         ),
       ],
+    );
+  }
+}
+
+class _CompleteProfilePromptSheet extends StatelessWidget {
+  const _CompleteProfilePromptSheet();
+
+  static const Color primaryGreen = Color(0xFF4D8F00);
+  static const Color lightGreen = Color(0xFFEAF5E8);
+  static const Color textGreen = Color(0xFF294529);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 14,
+        bottom: MediaQuery.of(context).padding.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE0E0E0),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            width: 68,
+            height: 68,
+            decoration: const BoxDecoration(
+              color: lightGreen,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.assignment_ind_outlined,
+              size: 36,
+              color: primaryGreen,
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Lengkapi Profil Pasien',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: textGreen,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Selamat datang di Akesa! Akun Anda belum memiliki data profil pasien. '
+            'Lengkapi NIK dan data diri Anda untuk mengaktifkan kode QR pasien '
+            'serta menghubungkan rekam medis Anda.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Color(0xFF5E6D5D),
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 26),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: primaryGreen,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.edit_note_rounded, size: 20),
+              label: const Text(
+                'Lengkapi Sekarang',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'Nanti Saja',
+                style: TextStyle(
+                  color: Color(0xFF70806F),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

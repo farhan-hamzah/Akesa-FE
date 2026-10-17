@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:clerk_flutter/clerk_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:http_parser/http_parser.dart';
@@ -58,9 +59,11 @@ class AkesaApi {
             body['error']?.toString() ?? body['message']?.toString() ?? message;
       }
 
+      debugPrint('[AkesaApi] <-- ${response.statusCode} ${response.request?.url.path} | Error: $message | Body: ${response.body}');
       throw ApiException(response.statusCode, message);
     }
 
+    debugPrint('[AkesaApi] <-- ${response.statusCode} ${response.request?.url.path}');
     return _unwrapData(body);
   }
 
@@ -80,8 +83,10 @@ class AkesaApi {
 
   Future<dynamic> _get(String path) async {
     final headers = await _authHeaders();
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    debugPrint('[AkesaApi] --> GET $uri');
     final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}$path'),
+      uri,
       headers: headers,
     );
     return _handleResponse(response);
@@ -89,8 +94,10 @@ class AkesaApi {
 
   Future<dynamic> _post(String path) async {
     final headers = await _authHeaders();
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    debugPrint('[AkesaApi] --> POST $uri');
     final response = await http.post(
-      Uri.parse('${ApiConfig.baseUrl}$path'),
+      uri,
       headers: headers,
     );
     return _handleResponse(response);

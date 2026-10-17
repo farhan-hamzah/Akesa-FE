@@ -63,6 +63,7 @@ class _AuthFormState extends State<AuthForm> {
   // ============================================================
 
   bool verificationMode = false;
+  bool isSignUpVerification = false;
 
   clerk.Strategy verificationStrategy = clerk.Strategy.unknown;
 
@@ -167,6 +168,7 @@ class _AuthFormState extends State<AuthForm> {
         verificationCodeController.clear();
 
         setState(() {
+          isSignUpVerification = false;
           verificationMode = true;
           errorMessage = null;
         });
@@ -218,30 +220,38 @@ class _AuthFormState extends State<AuthForm> {
 
     try {
       debugPrint('========== CLERK VERIFY CODE ==========');
+      debugPrint('isSignUpVerification: $isSignUpVerification');
       debugPrint('Strategy: $verificationStrategy');
       debugPrint('Code length: ${code.length}');
       debugPrint('========================================');
 
-      await widget.authState.attemptSignIn(
-        strategy: clerk.Strategy.emailCode,
-        code: code,
-      );
+      if (isSignUpVerification) {
+        await widget.authState.attemptSignUp(
+          strategy: clerk.Strategy.emailCode,
+          code: code,
+        );
+      } else {
+        await widget.authState.attemptSignIn(
+          strategy: clerk.Strategy.emailCode,
+          code: code,
+        );
+      }
 
       if (!mounted) return;
 
       debugPrint('========== AFTER VERIFY ==========');
       debugPrint('isSignedIn: ${widget.authState.isSignedIn}');
       debugPrint('signIn: ${widget.authState.signIn}');
+      debugPrint('signUp: ${widget.authState.signUp}');
       debugPrint('==================================');
 
       if (widget.authState.isSignedIn) {
         return;
       }
 
-      final signIn = widget.authState.signIn;
-
-      if (signIn != null) {
-        if (signIn.needsClientTrust || signIn.needsSecondFactor) {
+      if (isSignUpVerification) {
+        final signUp = widget.authState.signUp;
+        if (signUp != null && signUp.unverified(clerk.Field.emailAddress)) {
           setState(() {
             errorMessage = 'Kode belum berhasil memverifikasi akun. '
                 'Silakan periksa kembali kode yang dimasukkan.';
@@ -250,6 +260,20 @@ class _AuthFormState extends State<AuthForm> {
           setState(() {
             errorMessage = 'Verifikasi belum selesai. Silakan coba lagi.';
           });
+        }
+      } else {
+        final signIn = widget.authState.signIn;
+        if (signIn != null) {
+          if (signIn.needsClientTrust || signIn.needsSecondFactor) {
+            setState(() {
+              errorMessage = 'Kode belum berhasil memverifikasi akun. '
+                  'Silakan periksa kembali kode yang dimasukkan.';
+            });
+          } else {
+            setState(() {
+              errorMessage = 'Verifikasi belum selesai. Silakan coba lagi.';
+            });
+          }
         }
       }
     } catch (e, stackTrace) {
@@ -284,6 +308,7 @@ class _AuthFormState extends State<AuthForm> {
 
     try {
       debugPrint('========== RESEND VERIFICATION CODE ==========');
+      debugPrint('isSignUpVerification: $isSignUpVerification');
 
       await widget.authState.resendCode(verificationStrategy);
 
@@ -294,6 +319,14 @@ class _AuthFormState extends State<AuthForm> {
       setState(() {
         errorMessage = null;
       });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Kode verifikasi baru telah dikirimkan ke email Anda.'),
+          backgroundColor: primaryGreen,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
 
       debugPrint('Verification code resent.');
       debugPrint('==============================================');
@@ -332,6 +365,7 @@ class _AuthFormState extends State<AuthForm> {
 
     setState(() {
       verificationMode = false;
+      isSignUpVerification = false;
       verificationStrategy = clerk.Strategy.unknown;
       verificationIdentifier = '';
       errorMessage = null;
@@ -384,6 +418,36 @@ class _AuthFormState extends State<AuthForm> {
       debugPrint('isSignedIn: ${widget.authState.isSignedIn}');
       debugPrint('signUp: ${widget.authState.signUp}');
       debugPrint('====================================');
+
+      if (!mounted) return;
+
+      if (widget.authState.isSignedIn) {
+        return;
+      }
+
+      final signUp = widget.authState.signUp;
+      if (signUp != null && signUp.unverified(clerk.Field.emailAddress)) {
+        // Memicu Clerk mengirimkan kode OTP 6-digit ke email
+        await widget.authState.attemptSignUp(
+          strategy: clerk.Strategy.emailCode,
+        );
+
+        if (!mounted) return;
+
+        verificationCodeController.clear();
+        setState(() {
+          verificationIdentifier = email;
+          verificationStrategy = clerk.Strategy.emailCode;
+          isSignUpVerification = true;
+          verificationMode = true;
+          errorMessage = null;
+        });
+
+        debugPrint('========== SIGN UP VERIFICATION STARTED ==========');
+        debugPrint('verificationIdentifier: $verificationIdentifier');
+        debugPrint('verificationStrategy: $verificationStrategy');
+        debugPrint('==================================================');
+      }
     } catch (e, stackTrace) {
       debugPrint('========== CLERK REGISTER ERROR ==========');
       debugPrint('ERROR: $e');
@@ -1189,9 +1253,9 @@ class _AuthFormState extends State<AuthForm> {
                 Center(
                   child: TextButton(
                     onPressed: loading ? null : backToLogin,
-                    child: const Text(
-                      'Gunakan akun lain',
-                      style: TextStyle(color: Color(0xFF71816E), fontSize: 12),
+                    child: Text(
+                      isSignUpVerification ? 'Batal / Ubah data pendaftaran' : 'Gunakan akun lain',
+                      style: const TextStyle(color: Color(0xFF71816E), fontSize: 12),
                     ),
                   ),
                 ),

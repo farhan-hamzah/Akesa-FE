@@ -130,7 +130,8 @@ class _AuthFormState extends State<AuthForm> {
 
       if (signIn == null) {
         setState(() {
-          errorMessage = 'Proses login belum dapat dilanjutkan. Silakan coba lagi.';
+          errorMessage =
+              'Proses login belum dapat dilanjutkan. Silakan coba lagi.';
         });
         return;
       }
@@ -150,7 +151,8 @@ class _AuthFormState extends State<AuthForm> {
 
         if (emailCodeFactors.isEmpty) {
           setState(() {
-            errorMessage = 'Akun membutuhkan verifikasi tambahan, tetapi metode '
+            errorMessage =
+                'Akun membutuhkan verifikasi tambahan, tetapi metode '
                 'verifikasi email tidak tersedia.';
           });
           return;
@@ -161,7 +163,9 @@ class _AuthFormState extends State<AuthForm> {
 
         verificationStrategy = clerk.Strategy.emailCode;
 
-        await widget.authState.attemptSignIn(strategy: clerk.Strategy.emailCode);
+        await widget.authState.attemptSignIn(
+          strategy: clerk.Strategy.emailCode,
+        );
 
         if (!mounted) return;
 
@@ -253,7 +257,8 @@ class _AuthFormState extends State<AuthForm> {
         final signUp = widget.authState.signUp;
         if (signUp != null && signUp.unverified(clerk.Field.emailAddress)) {
           setState(() {
-            errorMessage = 'Kode belum berhasil memverifikasi akun. '
+            errorMessage =
+                'Kode belum berhasil memverifikasi akun. '
                 'Silakan periksa kembali kode yang dimasukkan.';
           });
         } else {
@@ -266,7 +271,8 @@ class _AuthFormState extends State<AuthForm> {
         if (signIn != null) {
           if (signIn.needsClientTrust || signIn.needsSecondFactor) {
             setState(() {
-              errorMessage = 'Kode belum berhasil memverifikasi akun. '
+              errorMessage =
+                  'Kode belum berhasil memverifikasi akun. '
                   'Silakan periksa kembali kode yang dimasukkan.';
             });
           } else {
@@ -379,7 +385,10 @@ class _AuthFormState extends State<AuthForm> {
     final password = passwordController.text;
     final confirmPassword = confirmPasswordController.text;
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
+    if (name.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty ||
+        confirmPassword.isEmpty) {
       setState(() {
         errorMessage = 'Semua field wajib diisi.';
       });
@@ -403,7 +412,9 @@ class _AuthFormState extends State<AuthForm> {
 
       final firstName = nameParts.first;
 
-      final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : null;
+      final lastName = nameParts.length > 1
+          ? nameParts.sublist(1).join(' ')
+          : null;
 
       await widget.authState.attemptSignUp(
         strategy: clerk.Strategy.password,
@@ -426,11 +437,37 @@ class _AuthFormState extends State<AuthForm> {
       }
 
       final signUp = widget.authState.signUp;
+      debugPrint('Sign up tersedia: ${signUp != null}');
       if (signUp != null && signUp.unverified(clerk.Field.emailAddress)) {
+        debugPrint('Status sign-up: ${signUp.status}');
+        debugPrint(
+          'Email belum terverifikasi: '
+          '${signUp.unverified(clerk.Field.emailAddress)}',
+        );
+        debugPrint(
+          'Sedang verifikasi email: '
+          '${signUp.isVerifying(clerk.Strategy.emailCode)}',
+        );
+
         // Memicu Clerk mengirimkan kode OTP 6-digit ke email
         await widget.authState.attemptSignUp(
           strategy: clerk.Strategy.emailCode,
         );
+
+        final updatedSignUp = widget.authState.signUp;
+
+        debugPrint('========== EMAIL CODE DIAGNOSTIC ==========');
+        debugPrint(
+          'supportsEmailCode: '
+          '${widget.authState.env.supportsEmailCode}',
+        );
+        debugPrint('signUp status: ${updatedSignUp?.status}');
+        debugPrint('signUp verifications: ${updatedSignUp?.verifications}');
+        debugPrint(
+          'isVerifying emailCode: '
+          '${updatedSignUp?.isVerifying(clerk.Strategy.emailCode)}',
+        );
+        debugPrint('missing fields: ${updatedSignUp?.missingFields}');
 
         if (!mounted) return;
 
@@ -637,14 +674,21 @@ class _AuthFormState extends State<AuthForm> {
     final horizontalPadding = screenWidth < 360 ? 22.0 : 28.0;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(horizontalPadding, 22, horizontalPadding, 28),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        22,
+        horizontalPadding,
+        28,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildModeBadge(),
           const SizedBox(height: 12),
           Text(
-            isLogin ? 'Masuk kembali ke akun anda' : 'Yuk bergabung dengan kami',
+            isLogin
+                ? 'Masuk kembali ke akun anda'
+                : 'Yuk bergabung dengan kami',
             style: const TextStyle(
               color: darkGreen,
               fontSize: 21,
@@ -654,10 +698,12 @@ class _AuthFormState extends State<AuthForm> {
           ),
           const SizedBox(height: 6),
           Text(
-            isLogin
-                ? 'Kelola layanan kesehatan Anda dengan lebih mudah.'
-                : 'Buat akun Akesa dan nikmati pengalaman layanan kesehatan yang lebih praktis.',
-            style: const TextStyle(color: Color(0xFF7A8977), fontSize: 12, height: 1.5),
+            isLogin ? 'Kelola layanan kesehatan Anda dengan lebih mudah.' : 'Buat akun Akesa dan nikmati pengalaman layanan kesehatan yang lebih praktis.',
+            style: const TextStyle(
+              color: Color(0xFF7A8977),
+              fontSize: 12,
+              height: 1.5,
+            ),
           ),
           const SizedBox(height: 22),
 
@@ -667,7 +713,11 @@ class _AuthFormState extends State<AuthForm> {
           if (!isLogin) ...[
             const Text(
               'Nama lengkap',
-              style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF60755D),
+                fontWeight: FontWeight.w500,
+              ),
             ),
             const SizedBox(height: 6),
             AuthTextField(
@@ -683,7 +733,11 @@ class _AuthFormState extends State<AuthForm> {
           // ------------------------------------------------------
           const Text(
             'Email',
-            style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFF60755D),
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 6),
           AuthTextField(
@@ -699,7 +753,11 @@ class _AuthFormState extends State<AuthForm> {
           // ------------------------------------------------------
           const Text(
             'Password',
-            style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFF60755D),
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 6),
           AuthTextField(
@@ -721,7 +779,11 @@ class _AuthFormState extends State<AuthForm> {
             const SizedBox(height: 13),
             const Text(
               'Konfirmasi password',
-              style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF60755D),
+                fontWeight: FontWeight.w500,
+              ),
             ),
             const SizedBox(height: 6),
             AuthTextField(
@@ -756,12 +818,19 @@ class _AuthFormState extends State<AuthForm> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.error_outline, size: 18, color: Colors.redAccent),
+                  const Icon(
+                    Icons.error_outline,
+                    size: 18,
+                    color: Colors.redAccent,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       errorMessage!,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFFB42318)),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFB42318),
+                      ),
                     ),
                   ),
                 ],
@@ -803,7 +872,11 @@ class _AuthFormState extends State<AuthForm> {
       ),
       child: Text(
         isLogin ? 'Selamat datang kembali' : 'Daftarkan akun anda',
-        style: const TextStyle(color: darkGreen, fontSize: 10, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          color: darkGreen,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -823,7 +896,9 @@ class _AuthFormState extends State<AuthForm> {
     if (result == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Password berhasil diubah. Silakan masuk dengan password baru.'),
+          content: Text(
+            'Password berhasil diubah. Silakan masuk dengan password baru.',
+          ),
           backgroundColor: primaryGreen,
           behavior: SnackBarBehavior.floating,
         ),
@@ -899,7 +974,9 @@ class _AuthFormState extends State<AuthForm> {
       height: 48,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF76B900), Color(0xFF478A00)]),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF76B900), Color(0xFF478A00)],
+          ),
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
@@ -915,7 +992,9 @@ class _AuthFormState extends State<AuthForm> {
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
             disabledBackgroundColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
           ),
           child: loading
               ? const SizedBox(
@@ -928,7 +1007,11 @@ class _AuthFormState extends State<AuthForm> {
                 )
               : Text(
                   isLogin ? 'Login' : 'Daftar',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
                 ),
         ),
       ),
@@ -952,7 +1035,11 @@ class _AuthFormState extends State<AuthForm> {
             onTap: switchMode,
             child: Text(
               isLogin ? 'Register' : 'Login',
-              style: const TextStyle(color: darkGreen, fontSize: 12, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: darkGreen,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -994,7 +1081,11 @@ class _AuthFormState extends State<AuthForm> {
           },
           icon: const Text(
             'G',
-            style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: Color(0xFF4285F4)),
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF4285F4),
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -1024,7 +1115,12 @@ class _AuthFormState extends State<AuthForm> {
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(horizontalPadding, 24, horizontalPadding, 28),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              24,
+              horizontalPadding,
+              28,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1052,7 +1148,11 @@ class _AuthFormState extends State<AuthForm> {
                       color: const Color(0xFFEAF5E7),
                       borderRadius: BorderRadius.circular(22),
                     ),
-                    child: const Icon(Icons.mark_email_read_outlined, size: 38, color: primaryGreen),
+                    child: const Icon(
+                      Icons.mark_email_read_outlined,
+                      size: 38,
+                      color: primaryGreen,
+                    ),
                   ),
                 ),
 
@@ -1065,7 +1165,11 @@ class _AuthFormState extends State<AuthForm> {
                   child: Text(
                     'Verifikasi email',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: darkGreen, fontSize: 24, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      color: darkGreen,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
 
@@ -1079,7 +1183,11 @@ class _AuthFormState extends State<AuthForm> {
                     'Kami telah mengirimkan kode verifikasi '
                     'ke alamat email berikut:',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF7A8977), fontSize: 13, height: 1.5),
+                    style: TextStyle(
+                      color: Color(0xFF7A8977),
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
                   ),
                 ),
 
@@ -1090,9 +1198,15 @@ class _AuthFormState extends State<AuthForm> {
                 // ------------------------------------------------
                 Center(
                   child: Text(
-                    verificationIdentifier.isEmpty ? emailController.text.trim() : verificationIdentifier,
+                    verificationIdentifier.isEmpty
+                        ? emailController.text.trim()
+                        : verificationIdentifier,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: darkGreen, fontSize: 13, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: darkGreen,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
 
@@ -1103,7 +1217,11 @@ class _AuthFormState extends State<AuthForm> {
                 // ------------------------------------------------
                 const Text(
                   'Kode verifikasi',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF60755D),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
 
                 const SizedBox(height: 6),
@@ -1146,7 +1264,10 @@ class _AuthFormState extends State<AuthForm> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: primaryGreen, width: 1.5),
+                      borderSide: const BorderSide(
+                        color: primaryGreen,
+                        width: 1.5,
+                      ),
                     ),
                   ),
                   onSubmitted: (_) {
@@ -1172,12 +1293,19 @@ class _AuthFormState extends State<AuthForm> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.error_outline, size: 18, color: Colors.redAccent),
+                        const Icon(
+                          Icons.error_outline,
+                          size: 18,
+                          color: Colors.redAccent,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             errorMessage!,
-                            style: const TextStyle(fontSize: 12, color: Color(0xFFB42318)),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFB42318),
+                            ),
                           ),
                         ),
                       ],
@@ -1195,7 +1323,9 @@ class _AuthFormState extends State<AuthForm> {
                   height: 48,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFF76B900), Color(0xFF478A00)]),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF76B900), Color(0xFF478A00)],
+                      ),
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
@@ -1211,7 +1341,9 @@ class _AuthFormState extends State<AuthForm> {
                         backgroundColor: Colors.transparent,
                         shadowColor: Colors.transparent,
                         disabledBackgroundColor: Colors.transparent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                       child: loading
                           ? const SizedBox(
@@ -1219,12 +1351,18 @@ class _AuthFormState extends State<AuthForm> {
                               height: 21,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             )
                           : const Text(
                               'Verifikasi',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
                             ),
                     ),
                   ),
@@ -1240,7 +1378,11 @@ class _AuthFormState extends State<AuthForm> {
                     onPressed: loading ? null : resendVerificationCode,
                     child: const Text(
                       'Kirim ulang kode',
-                      style: TextStyle(color: primaryGreen, fontWeight: FontWeight.w600, fontSize: 13),
+                      style: TextStyle(
+                        color: primaryGreen,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ),
@@ -1254,8 +1396,13 @@ class _AuthFormState extends State<AuthForm> {
                   child: TextButton(
                     onPressed: loading ? null : backToLogin,
                     child: Text(
-                      isSignUpVerification ? 'Batal / Ubah data pendaftaran' : 'Gunakan akun lain',
-                      style: const TextStyle(color: Color(0xFF71816E), fontSize: 12),
+                      isSignUpVerification
+                          ? 'Batal / Ubah data pendaftaran'
+                          : 'Gunakan akun lain',
+                      style: const TextStyle(
+                        color: Color(0xFF71816E),
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -1270,7 +1417,11 @@ class _AuthFormState extends State<AuthForm> {
                     'Kode verifikasi berlaku sesuai ketentuan '
                     'keamanan Clerk.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 10, height: 1.4),
+                    style: TextStyle(
+                      color: Colors.grey.shade500,
+                      fontSize: 10,
+                      height: 1.4,
+                    ),
                   ),
                 ),
               ],
@@ -1303,8 +1454,9 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   static const Color primaryGreen = Color(0xFF4D8F00);
   static const Color darkGreen = Color(0xFF185C22);
 
-  late final TextEditingController _emailController =
-      TextEditingController(text: widget.initialEmail);
+  late final TextEditingController _emailController = TextEditingController(
+    text: widget.initialEmail,
+  );
   final _codeController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -1324,8 +1476,9 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
     super.dispose();
   }
 
-  static final RegExp _emailRegex =
-      RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+  static final RegExp _emailRegex = RegExp(
+    r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+  );
 
   Future<void> _sendCode() async {
     final email = _emailController.text.trim();
@@ -1335,7 +1488,9 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
     }
 
     if (!_emailRegex.hasMatch(email)) {
-      setState(() => error = 'Format email tidak valid. Masukkan email yang benar.');
+      setState(
+        () => error = 'Format email tidak valid. Masukkan email yang benar.',
+      );
       return;
     }
 
@@ -1518,7 +1673,11 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                     color: const Color(0xFFEAF5E8),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.lock_reset, color: primaryGreen, size: 24),
+                  child: const Icon(
+                    Icons.lock_reset,
+                    color: primaryGreen,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1538,7 +1697,10 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                         step == 0
                             ? 'Langkah 1 dari 2: Verifikasi Email'
                             : 'Langkah 2 dari 2: Password Baru',
-                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ],
                   ),
@@ -1554,14 +1716,22 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
               step == 0
                   ? 'Masukkan email yang terdaftar. Kami akan mengirimkan kode verifikasi 6 digit untuk mereset kata sandi Anda.'
                   : 'Masukkan kode verifikasi yang telah dikirim ke email ${_emailController.text.trim()}, lalu buat kata sandi baru Anda.',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.4),
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF6B7280),
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 18),
 
             if (step == 0) ...[
               const Text(
                 'Email',
-                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF60755D),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 6),
               AuthTextField(
@@ -1574,7 +1744,11 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
             ] else ...[
               const Text(
                 'Kode OTP Verifikasi',
-                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF60755D),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 6),
               AuthTextField(
@@ -1586,7 +1760,11 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
               const SizedBox(height: 12),
               const Text(
                 'Password Baru',
-                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF60755D),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 6),
               AuthTextField(
@@ -1601,7 +1779,11 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
               const SizedBox(height: 12),
               const Text(
                 'Konfirmasi Password Baru',
-                style: TextStyle(fontSize: 12, color: Color(0xFF60755D), fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF60755D),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 6),
               AuthTextField(
@@ -1610,7 +1792,9 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 icon: Icons.lock_outline,
                 obscureText: !confirmPasswordVisible,
                 onToggleVisibility: () {
-                  setState(() => confirmPasswordVisible = !confirmPasswordVisible);
+                  setState(
+                    () => confirmPasswordVisible = !confirmPasswordVisible,
+                  );
                 },
               ),
               const SizedBox(height: 8),
@@ -1619,11 +1803,17 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 children: [
                   TextButton(
                     onPressed: loading ? null : () => setState(() => step = 0),
-                    child: const Text('Ganti email', style: TextStyle(fontSize: 12, color: primaryGreen)),
+                    child: const Text(
+                      'Ganti email',
+                      style: TextStyle(fontSize: 12, color: primaryGreen),
+                    ),
                   ),
                   TextButton(
                     onPressed: loading ? null : _resendCode,
-                    child: const Text('Kirim ulang kode', style: TextStyle(fontSize: 12, color: primaryGreen)),
+                    child: const Text(
+                      'Kirim ulang kode',
+                      style: TextStyle(fontSize: 12, color: primaryGreen),
+                    ),
                   ),
                 ],
               ),
@@ -1640,12 +1830,19 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline, size: 16, color: Colors.redAccent),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 16,
+                      color: Colors.redAccent,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         error!,
-                        style: const TextStyle(fontSize: 11, color: Color(0xFFB42318)),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFB42318),
+                        ),
                       ),
                     ),
                   ],
@@ -1658,20 +1855,32 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
               width: double.infinity,
               height: 48,
               child: FilledButton(
-                onPressed: loading ? null : (step == 0 ? _sendCode : _resetPassword),
+                onPressed: loading
+                    ? null
+                    : (step == 0 ? _sendCode : _resetPassword),
                 style: FilledButton.styleFrom(
                   backgroundColor: primaryGreen,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: loading
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : Text(
-                        step == 0 ? 'Kirim Kode Verifikasi' : 'Simpan Password Baru',
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                        step == 0
+                            ? 'Kirim Kode Verifikasi'
+                            : 'Simpan Password Baru',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
                       ),
               ),
             ),
@@ -1681,4 +1890,3 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
     );
   }
 }
-

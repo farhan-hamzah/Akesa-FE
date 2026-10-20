@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/api_exception.dart';
 import '../models/identity_verification_data.dart';
+import '../models/ktp_ocr_data.dart';
 import '../services/akesa_api.dart';
 
 class IdentityVerificationPage extends StatefulWidget {
@@ -42,10 +43,12 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
 
   bool uploadingKtp = false;
   bool uploadingSelfie = false;
+  bool processingKtpOcr = false;
 
   bool loadingVerification = true;
 
   IdentityVerificationData? verification;
+  KtpOcrData? ktpOcrResult;
 
   @override
   void initState() {
@@ -172,13 +175,37 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
       return;
     }
 
-    if (uploadingKtp) return;
+    if (uploadingKtp || processingKtpOcr) return;
 
     setState(() {
       uploadingKtp = true;
+      processingKtpOcr = true;
     });
 
     try {
+      // 1. Baca informasi pada KTP melalui OCR.
+      final ocrResult = await api.uploadKtpForOcr(image);
+
+      if (!mounted) return;
+
+      setState(() {
+        ktpOcrResult = ocrResult;
+      });
+
+      // 2. Tampilkan hasil OCR agar pengguna dapat memeriksanya.
+      final confirmed = await _confirmOcrResult(ocrResult);
+
+      if (!mounted) return;
+
+      if (confirmed != true) {
+        setState(() {
+          uploadingKtp = false;
+          processingKtpOcr = false;
+        });
+        return;
+      }
+
+      // 3. Unggah dokumen ke sesi verifikasi identitas.
       final result = await api.uploadIdentityDocument(
         verificationId: widget.verificationId,
         file: image,
@@ -190,26 +217,100 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
         verification = result;
         ktpUploaded = result.documentUploaded;
         uploadingKtp = false;
-        currentStep = 1;
+        processingKtpOcr = false;
+
+        if (ktpUploaded) {
+          currentStep = 1;
+        }
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Foto KTP berhasil disimpan. Silakan lanjutkan dengan swafoto.',
+      if (ktpUploaded) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'KTP berhasil diproses dan disimpan. Silakan lanjutkan dengan swafoto.',
+            ),
+            behavior: SnackBarBehavior.floating,
           ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+        );
+      }
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
         uploadingKtp = false;
+        processingKtpOcr = false;
       });
 
       _showError(_formatError(e));
     }
+  }
+
+  Future<bool?> _confirmOcrResult(KtpOcrData data) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Periksa Data KTP'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Pastikan informasi berikut sesuai dengan KTP Anda.',
+                ),
+                const SizedBox(height: 16),
+                _ocrRow('NIK', data.nik),
+                _ocrRow('Nama', data.nama),
+                _ocrRow('Tempat lahir', data.tempatLahir),
+                _ocrRow('Tanggal lahir', data.tanggalLahir),
+                _ocrRow('Jenis kelamin', data.jenisKelamin),
+                _ocrRow('Alamat', data.alamat),
+                const SizedBox(height: 12),
+                const Text(
+                  'Jika ada informasi yang keliru, periksa kembali foto KTP '
+                  'atau koreksi datanya pada formulir profil.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Periksa Ulang'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Data Sudah Sesuai'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _ocrRow(String label, String? value) {
+    final displayValue = value == null || value.trim().isEmpty
+        ? 'Tidak terbaca'
+        : value;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 3),
+          Text(
+            displayValue,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
   }
 
   // ==========================================================
@@ -317,17 +418,41 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
           ),
         ),
       ),
-      body: Column(
-        children: [
-          _buildTabs(),
-          Expanded(
-            child: IndexedStack(
-              index: currentStep,
-              children: [_buildKtpTab(), _buildSelfieTab()],
+      body: loadingVerification
+          ? const Center(child: CircularProgressIndicator())
+          : verification == null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, size: 48),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Data verifikasi belum dapat dimuat.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _loadVerification,
+                      child: const Text('Coba Lagi'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                _buildTabs(),
+                Expanded(
+                  child: IndexedStack(
+                    index: currentStep,
+                    children: [_buildKtpTab(), _buildSelfieTab()],
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -440,8 +565,10 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
           else ...[
             _buildPrimaryButton(
               label: uploadingKtp
-                  ? 'Menyimpan Foto...'
-                  : 'Simpan & Lanjut ke Swafoto',
+                  ? processingKtpOcr
+                        ? 'Membaca Data KTP...'
+                        : 'Menyimpan Foto...'
+                  : 'Periksa KTP & Lanjut',
               icon: uploadingKtp ? null : Icons.arrow_forward,
               loading: uploadingKtp,
               onPressed: uploadingKtp ? null : _uploadKtp,

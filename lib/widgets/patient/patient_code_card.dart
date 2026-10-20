@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// The green "patient code" card at the top of the patient home page -
-/// compact label + copy/QR action buttons, matching the Figma layout.
-/// Pure display + callbacks; all state (loading, the code itself) lives
-/// in the parent page.
 class PatientCodeCard extends StatelessWidget {
   final String patientCode;
   final bool qrLoading;
-  final VoidCallback onCopyCode;
+  final VoidCallback? onCopyCode;
   final VoidCallback? onShowQr;
 
   const PatientCodeCard({

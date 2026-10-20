@@ -4,9 +4,6 @@ import '../../models/audit_log_data.dart';
 import '../../utils/category_utils.dart';
 import '../../utils/status_utils.dart';
 
-/// One entry in the patient's "Riwayat Aktivitas" (audit history) list.
-/// [hospitalName] is resolved by the parent page (it needs the loaded
-/// hospital list to look it up), so this widget stays purely presentational.
 class HistoryCard extends StatelessWidget {
   final AuditLogData log;
   final String hospitalName;
@@ -39,8 +36,15 @@ class HistoryCard extends StatelessWidget {
           Container(
             width: 38,
             height: 38,
-            decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(10)),
-            child: Icon(historyActionIcon(log.action), color: primaryGreen, size: 19),
+            decoration: BoxDecoration(
+              color: lightGreen,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              historyActionIcon(log.action),
+              color: primaryGreen,
+              size: 19,
+            ),
           ),
           const SizedBox(width: 11),
           Expanded(
@@ -49,10 +53,20 @@ class HistoryCard extends StatelessWidget {
               children: [
                 Text(
                   historyActionLabel(log.action),
-                  style: const TextStyle(color: textGreen, fontSize: 13, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    color: textGreen,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 3),
-                Text(hospitalName, style: const TextStyle(color: Color(0xFF5E6B5D), fontSize: 11)),
+                Text(
+                  hospitalName,
+                  style: const TextStyle(
+                    color: Color(0xFF5E6B5D),
+                    fontSize: 11,
+                  ),
+                ),
                 if (categories.isNotEmpty) ...[
                   const SizedBox(height: 7),
                   Wrap(
@@ -61,9 +75,14 @@ class HistoryCard extends StatelessWidget {
                     children: categories
                         .map(
                           (category) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                            decoration:
-                                BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: lightGreen,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                             child: Text(
                               categoryLabel(category),
                               style: const TextStyle(
@@ -78,7 +97,10 @@ class HistoryCard extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 7),
-                Text(formatDate(log.createdAt), style: const TextStyle(color: Color(0xFF98A398), fontSize: 9)),
+                Text(
+                  formatDate(log.createdAt),
+                  style: const TextStyle(color: Color(0xFF98A398), fontSize: 9),
+                ),
               ],
             ),
           ),

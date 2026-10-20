@@ -3,10 +3,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/patient_qr.dart';
 
-/// Content shown inside the bottom sheet opened from [PatientCodeCard]'s
-/// QR button. Pure display + callbacks - all state (loading, the QR data
-/// itself, the biometric check before it's ever fetched) lives in the
-/// parent page.
 class PatientQrSheet extends StatelessWidget {
   final PatientQr? qr;
   final bool rotating;
@@ -28,7 +24,9 @@ class PatientQrSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentQr = qr;
 
-    if (currentQr == null || currentQr.qrPayload.isEmpty || !currentQr.isActive) {
+    if (currentQr == null ||
+        currentQr.qrPayload.isEmpty ||
+        !currentQr.isActive) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
         child: Text('QR pasien tidak tersedia.'),
@@ -90,7 +88,10 @@ class PatientQrSheet extends StatelessWidget {
             OutlinedButton(
               onPressed: onClose,
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),

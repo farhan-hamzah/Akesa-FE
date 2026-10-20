@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -317,7 +315,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
       if (!mounted) return;
 
-      final result = await Navigator.of(context).push<bool>(
+      await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => IdentityVerificationPage(
             authState: widget.authState,
@@ -1047,19 +1045,30 @@ class _PatientHomePageState extends State<PatientHomePage> {
   // ==========================================================
 
   Future<void> _openProfileForm() async {
-    final profileSaved = await Navigator.of(context).push<bool>(
+    final result = await Navigator.of(context).push<dynamic>(
       MaterialPageRoute(
         builder: (_) => PatientProfileFormPage(
           authState: widget.authState,
           profile: profile,
           identityVerification: _identityVerification,
+          onProfileCreated: () {
+            _loadHome();
+          },
+          onStartIdentityVerification: (ktpImage) async {
+            await _openIdentityVerification();
+          },
         ),
       ),
     );
 
     if (!mounted) return;
 
-    if (profileSaved == true) {
+    if (result != null) {
+      if (result is PatientProfileData) {
+        setState(() {
+          profile = result;
+        });
+      }
       await _loadHome();
     }
   }
@@ -1304,11 +1313,15 @@ class _PatientHomePageState extends State<PatientHomePage> {
   Widget _buildProfilePage() {
     final patient = profile;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(18, 24, 18, 30),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return RefreshIndicator(
+      color: primaryGreen,
+      onRefresh: _loadHome,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(18, 24, 18, 30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           const Text(
             'Profil Saya',
             style: TextStyle(
@@ -1474,8 +1487,9 @@ class _PatientHomePageState extends State<PatientHomePage> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildProfileInfo({
     required IconData icon,
@@ -1611,6 +1625,8 @@ class _PatientHomePageState extends State<PatientHomePage> {
           });
         } else if (index == 1 && history.isEmpty && !historyLoading) {
           await _loadHistory();
+        } else if (index == 2 && profile == null && !loading) {
+          await _loadHome();
         }
       },
       indicatorColor: Colors.transparent,

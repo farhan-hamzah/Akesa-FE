@@ -15,6 +15,7 @@ import '../models/patient_profile_data.dart';
 import '../models/patient_qr.dart';
 import '../models/identity_verification_data.dart';
 import '../models/ktp_ocr_data.dart';
+import '../models/staff_admin_models.dart';
 
 class AkesaApi {
   final ClerkAuthState authState;
@@ -99,6 +100,30 @@ class AkesaApi {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
     debugPrint('[AkesaApi] --> POST $uri');
     final response = await http.post(uri, headers: headers);
+    return _handleResponse(response);
+  }
+
+  Future<dynamic> _postJson(String path, Map<String, dynamic> body) async {
+    final headers = await _authHeaders();
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    debugPrint('[AkesaApi] --> POST $uri');
+    final response = await http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
+  }
+
+  Future<dynamic> _putJson(String path, Map<String, dynamic> body) async {
+    final headers = await _authHeaders();
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    debugPrint('[AkesaApi] --> PUT $uri');
+    final response = await http.put(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
     return _handleResponse(response);
   }
 
@@ -243,11 +268,7 @@ class AkesaApi {
   Future<KtpOcrData> uploadKtpForOcr(XFile image) async {
     final token = await getSessionToken();
 
-    if (token == null || token.isEmpty) {
-      throw ApiException(401, 'Session token tidak tersedia.');
-    }
-
-    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/patient/ktp/ocr');
+    final uri = Uri.parse('${ApiConfig.ktpOcrBaseUrl}/api/v1/ktp/ocr');
 
     final extension = image.name.toLowerCase().split('.').last;
 
@@ -261,12 +282,15 @@ class AkesaApi {
         contentType = MediaType('image', 'png');
         break;
       default:
-        throw ApiException(400, 'Format KTP harus JPG atau PNG.');
+        contentType = MediaType('image', 'jpeg');
+        break;
     }
 
     final request = http.MultipartRequest('POST', uri);
 
-    request.headers['Authorization'] = 'Bearer $token';
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
     request.headers['Accept'] = 'application/json';
 
     request.files.add(
@@ -278,16 +302,29 @@ class AkesaApi {
       ),
     );
 
+    debugPrint('[AkesaApi] --> POST Multipart $uri (KTP OCR)');
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
 
-    final result = _handleResponse(response);
+    final body = _decodeResponse(response);
 
-    if (result is! Map<String, dynamic>) {
-      throw ApiException(500, 'Format hasil OCR KTP tidak valid.');
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = 'Gagal memindai KTP.';
+      if (body is Map<String, dynamic>) {
+        message = body['error']?.toString() ??
+            body['message']?.toString() ??
+            message;
+      }
+      throw ApiException(response.statusCode, message);
     }
 
-    return KtpOcrData.fromJson(result);
+    if (body is Map<String, dynamic>) {
+      return KtpOcrData.fromJson(body);
+    } else if (body is Map) {
+      return KtpOcrData.fromJson(Map<String, dynamic>.from(body));
+    }
+
+    throw ApiException(500, 'Format hasil OCR KTP tidak valid.');
   }
 
   Future<IdentityVerificationData> getIdentityVerification(
@@ -563,5 +600,95 @@ class AkesaApi {
     }
 
     return json;
+  }
+
+  // --------------------------------------------------- HOSPITAL REGISTRATION FLOW
+  Future<HospitalInvitationValidation> validateHospitalInvitation(
+      String keyCode) async {
+    final key = Uri.encodeComponent(keyCode.trim());
+    final json = await _get('/api/v1/hospitals/invitations/validate?key=$key');
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(500, 'Format respon validasi tidak valid.');
+    }
+    return HospitalInvitationValidation.fromJson(json);
+  }
+
+  Future<HospitalApplication> registerHospitalWithKey({
+    required String keyCode,
+    required String name,
+    required String address,
+    required String phone,
+    required String email,
+    required String registrationNumber,
+    String? npwp,
+    String? licenseDocumentUrl,
+    String? picFullName,
+    String? picPosition,
+  }) async {
+    final json = await _postJson(
+      '/api/v1/hospitals/register',
+      {
+        'keyCode': keyCode.trim(),
+        'name': name.trim(),
+        'address': address.trim(),
+        'phone': phone.trim(),
+        'email': email.trim(),
+        'registrationNumber': registrationNumber.trim(),
+        'npwp': npwp?.trim() ?? '',
+        'licenseDocumentUrl': licenseDocumentUrl?.trim() ?? '',
+        'picFullName': picFullName?.trim() ?? '',
+        'picPosition': picPosition?.trim() ?? '',
+      },
+    );
+
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(500, 'Format respon pendaftaran tidak valid.');
+    }
+
+    return HospitalApplication.fromJson(json);
+  }
+
+  Future<HospitalApplication?> getMyHospitalApplication() async {
+    try {
+      final json = await _get('/api/v1/hospitals/my-application');
+      if (json == null || json is! Map<String, dynamic>) return null;
+      return HospitalApplication.fromJson(json);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  Future<HospitalApplication> resubmitHospitalApplication({
+    required String name,
+    required String address,
+    required String phone,
+    required String email,
+    required String registrationNumber,
+    String? npwp,
+    String? licenseDocumentUrl,
+    String? picFullName,
+    String? picPosition,
+  }) async {
+    final json = await _putJson(
+      '/api/v1/hospitals/my-application',
+      {
+        'name': name.trim(),
+        'address': address.trim(),
+        'phone': phone.trim(),
+        'email': email.trim(),
+        'registrationNumber': registrationNumber.trim(),
+        'npwp': npwp?.trim() ?? '',
+        'licenseDocumentUrl': licenseDocumentUrl?.trim() ?? '',
+        'picFullName': picFullName?.trim() ?? '',
+        'picPosition': picPosition?.trim() ?? '',
+      },
+    );
+
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(500, 'Format respon revisi tidak valid.');
+    }
+
+    return HospitalApplication.fromJson(json);
   }
 }

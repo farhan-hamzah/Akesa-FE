@@ -26,19 +26,32 @@ class KtpOcrData {
   });
 
   factory KtpOcrData.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> data =
+        (json['data'] is Map<String, dynamic>)
+            ? json['data'] as Map<String, dynamic>
+            : (json['data'] is Map)
+                ? Map<String, dynamic>.from(json['data'] as Map)
+                : json;
+
     return KtpOcrData(
-      ocrSessionId: (json['ocrSessionId'] ?? json['ocr_session_id'])
+      ocrSessionId: (data['ocrSessionId'] ??
+              data['ocr_session_id'] ??
+              json['ocrSessionId'] ??
+              json['ocr_session_id'])
           ?.toString(),
-      nik: json['nik']?.toString(),
-      nama: json['nama']?.toString(),
-      tempatLahir: json['tempat_lahir']?.toString(),
-      tanggalLahir: json['tanggal_lahir']?.toString(),
-      jenisKelamin: json['jenis_kelamin']?.toString(),
-      alamat: json['alamat']?.toString(),
-      agama: json['agama']?.toString(),
-      statusPerkawinan: json['status_perkawinan']?.toString(),
-      pekerjaan: json['pekerjaan']?.toString(),
-      kewarganegaraan: json['kewarganegaraan']?.toString(),
+      nik: data['nik']?.toString(),
+      nama: data['nama']?.toString(),
+      tempatLahir: (data['tempat_lahir'] ?? data['tempatLahir'])?.toString(),
+      tanggalLahir:
+          (data['tanggal_lahir'] ?? data['tanggalLahir'])?.toString(),
+      jenisKelamin:
+          (data['jenis_kelamin'] ?? data['jenisKelamin'])?.toString(),
+      alamat: data['alamat']?.toString(),
+      agama: data['agama']?.toString(),
+      statusPerkawinan:
+          (data['status_perkawinan'] ?? data['statusPerkawinan'])?.toString(),
+      pekerjaan: data['pekerjaan']?.toString(),
+      kewarganegaraan: data['kewarganegaraan']?.toString(),
     );
   }
 }

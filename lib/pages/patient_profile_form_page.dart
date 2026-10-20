@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:clerk_flutter/clerk_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../models/ktp_ocr_data.dart';
+import 'identify_verification_page.dart';
 
 import '../models/patient_profile_data.dart';
 import '../models/identity_verification_data.dart';
@@ -12,12 +16,15 @@ class PatientProfileFormPage extends StatefulWidget {
     this.profile,
     this.identityVerification,
     this.onProfileCreated,
+    this.onStartIdentityVerification,
   });
 
   final ClerkAuthState authState;
   final PatientProfileData? profile;
   final IdentityVerificationData? identityVerification;
   final VoidCallback? onProfileCreated;
+
+  final Future<void> Function(XFile? ktpImage)? onStartIdentityVerification;
 
   @override
   State<PatientProfileFormPage> createState() => _PatientProfileFormPageState();
@@ -37,10 +44,14 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
   final _emergencyNameController = TextEditingController();
   final _emergencyPhoneController = TextEditingController();
 
+  final ImagePicker _picker = ImagePicker();
+
+  XFile? _ktpImage;
   DateTime? _dateOfBirth;
   String? _selectedGender;
   String? _selectedBloodType;
   bool _isSaving = false;
+  bool _isReadingKtp = false;
 
   bool get _isIdentityVerified {
     return widget.identityVerification?.status == 'VERIFIED';
@@ -259,6 +270,167 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     );
   }
 
+  Future<void> _showKtpPicker() async {
+    if (_isReadingKtp || _isIdentityVerified) return;
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Text(
+                  'Pilih Sumber Foto KTP',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Ambil Foto dengan Kamera'),
+                onTap: () {
+                  Navigator.pop(context, ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Pilih dari Galeri'),
+                onTap: () {
+                  Navigator.pop(context, ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source != null && mounted) {
+      await _pickAndReadKtp(source);
+    }
+  }
+
+  Future<void> _pickAndReadKtp(ImageSource source) async {
+    try {
+      final image = await _picker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 2000,
+      );
+
+      if (image == null || !mounted) return;
+
+      setState(() {
+        _ktpImage = image;
+        _isReadingKtp = true;
+      });
+
+      // Kirim foto KTP ke API OCR Akesa.
+      final result = await api.uploadKtpForOcr(image);
+
+      if (!mounted) return;
+
+      setState(() {
+        if (result.nama != null && result.nama!.trim().isNotEmpty) {
+          _fullNameController.text = result.nama!.trim();
+        }
+
+        if (result.nik != null && result.nik!.trim().isNotEmpty) {
+          _nikController.text = result.nik!.replaceAll(RegExp(r'\s+'), '');
+        }
+
+        if (result.alamat != null && result.alamat!.trim().isNotEmpty) {
+          _addressController.text = result.alamat!.trim();
+        }
+
+        final birthDate = _parseOcrDate(result.tanggalLahir);
+        if (birthDate != null) {
+          _dateOfBirth = birthDate;
+        }
+
+        final gender = _parseOcrGender(result.jenisKelamin);
+        if (gender != null) {
+          _selectedGender = gender;
+        }
+      });
+
+      _showMessage(
+        'Pemindaian selesai. Periksa kembali data KTP sebelum menyimpan profil.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      _showMessage('Gagal membaca KTP. Silakan coba foto yang lebih jelas.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isReadingKtp = false;
+        });
+      }
+    }
+  }
+
+  DateTime? _parseOcrDate(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+
+    final input = value.trim();
+
+    // Format ISO, misalnya 2003-08-17.
+    final isoDate = DateTime.tryParse(input);
+    if (isoDate != null) return isoDate;
+
+    // Format Indonesia, misalnya 17/08/2003 atau 17-08-2003.
+    final normalized = input.replaceAll('-', '/');
+    final parts = normalized.split('/');
+
+    if (parts.length != 3) return null;
+
+    try {
+      final day = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final year = int.parse(parts[2]);
+
+      final date = DateTime(year, month, day);
+
+      // Menolak tanggal yang tidak valid, misalnya 31/02/2003.
+      if (date.year != year || date.month != month || date.day != day) {
+        return null;
+      }
+
+      return date;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _parseOcrGender(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+
+    final gender = value.trim().toUpperCase();
+
+    if (gender == 'L' ||
+        gender == 'LAKI-LAKI' ||
+        gender == 'LAKI LAKI' ||
+        gender == 'PRIA' ||
+        gender == 'MALE') {
+      return 'MALE';
+    }
+
+    if (gender == 'P' ||
+        gender == 'PEREMPUAN' ||
+        gender == 'WANITA' ||
+        gender == 'FEMALE') {
+      return 'FEMALE';
+    }
+
+    return null;
+  }
+
   InputDecoration _inputDecoration({
     required String label,
     required IconData icon,
@@ -361,6 +533,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
       padding: const EdgeInsets.only(bottom: 14),
       child: TextFormField(
         controller: controller,
+        enabled: enabled,
         keyboardType: keyboardType,
         maxLines: maxLines,
         textInputAction: maxLines > 1
@@ -541,6 +714,33 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     return null;
   }
 
+  Future<void> _startIdentityVerification() async {
+    final callback = widget.onStartIdentityVerification;
+
+    if (callback == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Fitur verifikasi identitas belum tersedia.'),
+        ),
+      );
+      return;
+    }
+
+    if (_isReadingKtp) {
+      return;
+    }
+
+    try {
+      await callback(_ktpImage);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuka verifikasi identitas: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -623,6 +823,82 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                 _buildDateField(),
 
                 _buildGenderSelector(),
+
+                const SizedBox(height: 16),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: akesaGreen.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: akesaGreen.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.verified_user_outlined),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Verifikasi Identitas',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      const Text(
+                        'Pindai KTP untuk mengisi data secara otomatis, '
+                        'kemudian lanjutkan verifikasi identitas Anda.',
+                        style: TextStyle(fontSize: 13, height: 1.5),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      OutlinedButton.icon(
+                        onPressed: (_isReadingKtp || _isIdentityVerified)
+                            ? null
+                            : _showKtpPicker,
+                        icon: const Icon(Icons.document_scanner_outlined),
+                        label: Text(
+                          _isReadingKtp
+                              ? 'Sedang membaca KTP...'
+                              : 'Pindai KTP & Isi Otomatis',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      FilledButton.icon(
+                        onPressed: (_isSaving || _isIdentityVerified)
+                            ? null
+                            : _startIdentityVerification,
+                        icon: const Icon(Icons.verified_user_outlined),
+                        label: const Text('Verifikasi Identitas'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: akesaGreen,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
 
                 _buildSectionTitle(
                   icon: Icons.home_outlined,

@@ -14,6 +14,7 @@ import '../models/hospital_data.dart';
 import '../models/patient_profile_data.dart';
 import '../models/patient_qr.dart';
 import '../models/identity_verification_data.dart';
+import '../models/ktp_ocr_data.dart';
 
 class AkesaApi {
   final ClerkAuthState authState;
@@ -59,11 +60,15 @@ class AkesaApi {
             body['error']?.toString() ?? body['message']?.toString() ?? message;
       }
 
-      debugPrint('[AkesaApi] <-- ${response.statusCode} ${response.request?.url.path} | Error: $message | Body: ${response.body}');
+      debugPrint(
+        '[AkesaApi] <-- ${response.statusCode} ${response.request?.url.path} | Error: $message | Body: ${response.body}',
+      );
       throw ApiException(response.statusCode, message);
     }
 
-    debugPrint('[AkesaApi] <-- ${response.statusCode} ${response.request?.url.path}');
+    debugPrint(
+      '[AkesaApi] <-- ${response.statusCode} ${response.request?.url.path}',
+    );
     return _unwrapData(body);
   }
 
@@ -85,10 +90,7 @@ class AkesaApi {
     final headers = await _authHeaders();
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
     debugPrint('[AkesaApi] --> GET $uri');
-    final response = await http.get(
-      uri,
-      headers: headers,
-    );
+    final response = await http.get(uri, headers: headers);
     return _handleResponse(response);
   }
 
@@ -96,10 +98,7 @@ class AkesaApi {
     final headers = await _authHeaders();
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
     debugPrint('[AkesaApi] --> POST $uri');
-    final response = await http.post(
-      uri,
-      headers: headers,
-    );
+    final response = await http.post(uri, headers: headers);
     return _handleResponse(response);
   }
 
@@ -239,6 +238,56 @@ class AkesaApi {
     }
 
     return PatientQr.fromJson(json);
+  }
+
+  Future<KtpOcrData> uploadKtpForOcr(XFile image) async {
+    final token = await getSessionToken();
+
+    if (token == null || token.isEmpty) {
+      throw ApiException(401, 'Session token tidak tersedia.');
+    }
+
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/patient/ktp/ocr');
+
+    final extension = image.name.toLowerCase().split('.').last;
+
+    final MediaType contentType;
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        contentType = MediaType('image', 'jpeg');
+        break;
+      case 'png':
+        contentType = MediaType('image', 'png');
+        break;
+      default:
+        throw ApiException(400, 'Format KTP harus JPG atau PNG.');
+    }
+
+    final request = http.MultipartRequest('POST', uri);
+
+    request.headers['Authorization'] = 'Bearer $token';
+    request.headers['Accept'] = 'application/json';
+
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'image',
+        image.path,
+        filename: image.name,
+        contentType: contentType,
+      ),
+    );
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+
+    final result = _handleResponse(response);
+
+    if (result is! Map<String, dynamic>) {
+      throw ApiException(500, 'Format hasil OCR KTP tidak valid.');
+    }
+
+    return KtpOcrData.fromJson(result);
   }
 
   Future<IdentityVerificationData> getIdentityVerification(

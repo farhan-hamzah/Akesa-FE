@@ -4,9 +4,6 @@ import '../../models/access_request_data.dart';
 import '../../utils/category_utils.dart';
 import '../../utils/status_utils.dart';
 
-/// One access-request card in the patient home "Permintaan Izin Akses"
-/// list - shows the requesting hospital, the categories asked for, and
-/// (depending on status) approve/reject or revoke actions.
 class AccessRequestCard extends StatelessWidget {
   final AccessRequestData request;
   final String hospitalName;
@@ -102,16 +99,24 @@ class AccessRequestCard extends StatelessWidget {
                 ),
                 if (!isPending)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
-                      color: accessStatusColor(status, approvedColor: primaryGreen)
-                          .withOpacity(0.10),
+                      color: accessStatusColor(
+                        status,
+                        approvedColor: primaryGreen,
+                      ).withOpacity(0.10),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       accessStatusLabel(status),
                       style: TextStyle(
-                        color: accessStatusColor(status, approvedColor: primaryGreen),
+                        color: accessStatusColor(
+                          status,
+                          approvedColor: primaryGreen,
+                        ),
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
                       ),
@@ -136,7 +141,8 @@ class AccessRequestCard extends StatelessWidget {
               )
             else
               ...request.categories.map(
-                (category) => _CategoryRow(category: category, isApproved: isApproved),
+                (category) =>
+                    _CategoryRow(category: category, isApproved: isApproved),
               ),
             if (isPending) ...[
               const SizedBox(height: 9),
@@ -159,12 +165,17 @@ class AccessRequestCard extends StatelessWidget {
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
                                 ),
                               )
                             : const Text(
                                 'Setujui Akses',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                       ),
                     ),
@@ -209,7 +220,11 @@ class AccessRequestCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(9),
                     ),
                   ),
-                  icon: const Icon(Icons.block_outlined, color: Colors.redAccent, size: 16),
+                  icon: const Icon(
+                    Icons.block_outlined,
+                    color: Colors.redAccent,
+                    size: 16,
+                  ),
                   label: const Text(
                     'Cabut Izin Akses (Revoke)',
                     style: TextStyle(
@@ -247,7 +262,11 @@ class _CategoryRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(categoryIcon(category), size: 15, color: const Color(0xFF658064)),
+          Icon(
+            categoryIcon(category),
+            size: 15,
+            color: const Color(0xFF658064),
+          ),
           const SizedBox(width: 7),
           Expanded(
             child: Text(
@@ -259,7 +278,9 @@ class _CategoryRow extends StatelessWidget {
             width: 30,
             height: 18,
             decoration: BoxDecoration(
-              color: isApproved ? const Color(0xFF236A38) : const Color(0xFF6F7B73),
+              color: isApproved
+                  ? const Color(0xFF236A38)
+                  : const Color(0xFF6F7B73),
               borderRadius: BorderRadius.circular(20),
             ),
             alignment: Alignment.centerRight,
@@ -267,8 +288,13 @@ class _CategoryRow extends StatelessWidget {
             child: Container(
               width: 12,
               height: 12,
-              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-              child: isApproved ? const Icon(Icons.check, size: 9, color: primaryGreen) : null,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: isApproved
+                  ? const Icon(Icons.check, size: 9, color: primaryGreen)
+                  : null,
             ),
           ),
         ],

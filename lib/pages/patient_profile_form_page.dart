@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:clerk_flutter/clerk_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+
+import 'package:flutter/material.dart';
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/ktp_ocr_data.dart';
 import 'identify_verification_page.dart';
 
+import 'dart:io';
+
+import '../models/api_exception.dart';
 import '../models/patient_profile_data.dart';
 import '../models/identity_verification_data.dart';
 import '../services/akesa_api.dart';
@@ -52,6 +60,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
   String? _selectedBloodType;
   bool _isSaving = false;
   bool _isReadingKtp = false;
+  PatientProfileData? _currentProfile;
 
   bool get _isIdentityVerified {
     return widget.identityVerification?.status == 'VERIFIED';
@@ -65,6 +74,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     super.initState();
 
     api = AkesaApi(authState: widget.authState);
+    _currentProfile = widget.profile;
 
     final profile = widget.profile;
 
@@ -84,6 +94,77 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
       if (profile.dateOfBirth != null && profile.dateOfBirth!.isNotEmpty) {
         _dateOfBirth = DateTime.tryParse(profile.dateOfBirth!);
       }
+    } else {
+      final clerkUser = widget.authState.user;
+      final clerkName =
+          clerkUser?.name ??
+          [
+            clerkUser?.firstName,
+            clerkUser?.lastName,
+          ].whereType<String>().where((s) => s.isNotEmpty).join(' ');
+
+      if (clerkName.trim().isNotEmpty) {
+        _fullNameController.text = clerkName.trim();
+      }
+
+      final phone = clerkUser?.phoneNumber;
+      if (phone != null && phone.isNotEmpty) {
+        _phoneController.text = phone;
+      }
+
+      _checkExistingProfile();
+    }
+  }
+
+  Future<void> _checkExistingProfile() async {
+    try {
+      final existing = await api.getPatientProfile();
+      if (!mounted) return;
+      _currentProfile = existing;
+      if (_fullNameController.text.isEmpty && existing.fullName.isNotEmpty) {
+        _fullNameController.text = existing.fullName;
+      }
+      if (_nikController.text.isEmpty && existing.nik != null) {
+        _nikController.text = existing.nik!;
+      }
+      if (_phoneController.text.isEmpty && existing.phoneNumber != null) {
+        _phoneController.text = existing.phoneNumber!;
+      }
+      if (_addressController.text.isEmpty && existing.address != null) {
+        _addressController.text = existing.address!;
+      }
+      if (_drugAllergyController.text.isEmpty && existing.drugAllergy != null) {
+        _drugAllergyController.text = existing.drugAllergy!;
+      }
+      if (_medicalHistoryController.text.isEmpty &&
+          existing.medicalHistory != null) {
+        _medicalHistoryController.text = existing.medicalHistory!;
+      }
+      if (_insuranceController.text.isEmpty &&
+          existing.insuranceNumber != null) {
+        _insuranceController.text = existing.insuranceNumber!;
+      }
+      if (_selectedGender == null &&
+          existing.gender != null &&
+          existing.gender!.isNotEmpty) {
+        setState(() {
+          _selectedGender = existing.gender;
+        });
+      }
+      if (_selectedBloodType == null && existing.bloodType != null) {
+        setState(() {
+          _selectedBloodType = existing.bloodType;
+        });
+      }
+      if (_dateOfBirth == null &&
+          existing.dateOfBirth != null &&
+          existing.dateOfBirth!.isNotEmpty) {
+        setState(() {
+          _dateOfBirth = DateTime.tryParse(existing.dateOfBirth!);
+        });
+      }
+    } catch (_) {
+      // Wajar jika belum pernah dibuat
     }
   }
 
@@ -174,36 +255,112 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
       PatientProfileData result;
 
-      if (widget.profile == null) {
-        result = await api.createPatientProfile(
-          nik: _nikController.text.trim(),
-          fullName: _fullNameController.text.trim(),
-          dateOfBirth: dateOfBirth,
-          gender: _selectedGender!,
-          phoneNumber: _phoneController.text.trim(),
-          address: _addressController.text.trim(),
-          bloodType: bloodType,
-          drugAllergy: drugAllergy,
-          medicalHistory: medicalHistory,
-          insuranceNumber: insuranceNumber,
-          emergencyContactName: emergencyContactName,
-          emergencyContactPhone: emergencyContactPhone,
-        );
+      if (_currentProfile == null) {
+        try {
+          result = await api.createPatientProfile(
+            nik: _nikController.text.trim(),
+            fullName: _fullNameController.text.trim(),
+            dateOfBirth: dateOfBirth,
+            gender: _selectedGender!,
+            phoneNumber: _phoneController.text.trim(),
+            address: _addressController.text.trim(),
+            bloodType: bloodType,
+            drugAllergy: drugAllergy,
+            medicalHistory: medicalHistory,
+            insuranceNumber: insuranceNumber,
+            emergencyContactName: emergencyContactName,
+            emergencyContactPhone: emergencyContactPhone,
+          );
+        } on ApiException catch (e) {
+          if (e.statusCode == 409 ||
+              e.message.toLowerCase().contains('profile_already_exists')) {
+            // Profil sudah terdaftar di backend (misalnya request sebelumnya berhasil masuk DB
+            // namun sempat gagal di tahap audit log/blockchain).
+            // Lakukan update dengan data form saat ini.
+            try {
+              result = await api.updatePatientProfile(
+                nik: _nikController.text.trim(),
+                fullName: _fullNameController.text.trim(),
+                dateOfBirth: dateOfBirth,
+                gender: _selectedGender!,
+                phoneNumber: _phoneController.text.trim(),
+                address: _addressController.text.trim(),
+                bloodType: bloodType,
+                drugAllergy: drugAllergy,
+                medicalHistory: medicalHistory,
+                insuranceNumber: insuranceNumber,
+                emergencyContactName: emergencyContactName,
+                emergencyContactPhone: emergencyContactPhone,
+              );
+            } on ApiException catch (updateErr) {
+              if (updateErr.statusCode == 500) {
+                // Jika update data masuk ke DB tetapi audit log gagal, ambil data profil langsung
+                result = await api.getPatientProfile();
+              } else {
+                rethrow;
+              }
+            }
+          } else if (e.statusCode == 500) {
+            // 500 sering terjadi bila row profil tersimpan di DB namun blockchain audit log gagal.
+            // Cek apakah profil berhasil tersimpan di DB:
+            try {
+              result = await api.getPatientProfile();
+            } catch (_) {
+              rethrow;
+            }
+          } else {
+            rethrow;
+          }
+        }
       } else {
-        result = await api.updatePatientProfile(
-          nik: _nikController.text.trim(),
-          fullName: _fullNameController.text.trim(),
-          dateOfBirth: dateOfBirth,
-          gender: _selectedGender!,
-          phoneNumber: _phoneController.text.trim(),
-          address: _addressController.text.trim(),
-          bloodType: bloodType,
-          drugAllergy: drugAllergy,
-          medicalHistory: medicalHistory,
-          insuranceNumber: insuranceNumber,
-          emergencyContactName: emergencyContactName,
-          emergencyContactPhone: emergencyContactPhone,
-        );
+        try {
+          result = await api.updatePatientProfile(
+            nik: _nikController.text.trim(),
+            fullName: _fullNameController.text.trim(),
+            dateOfBirth: dateOfBirth,
+            gender: _selectedGender!,
+            phoneNumber: _phoneController.text.trim(),
+            address: _addressController.text.trim(),
+            bloodType: bloodType,
+            drugAllergy: drugAllergy,
+            medicalHistory: medicalHistory,
+            insuranceNumber: insuranceNumber,
+            emergencyContactName: emergencyContactName,
+            emergencyContactPhone: emergencyContactPhone,
+          );
+        } on ApiException catch (e) {
+          if (e.statusCode == 500) {
+            // Update berhasil masuk DB namun audit log gagal
+            try {
+              result = await api.getPatientProfile();
+            } catch (_) {
+              rethrow;
+            }
+          } else {
+            rethrow;
+          }
+        }
+      }
+
+      _currentProfile = result;
+
+      // Sinkronkan nama lengkap ke akun Clerk
+      final updatedFullName = _fullNameController.text.trim();
+      if (updatedFullName.isNotEmpty) {
+        try {
+          final nameParts = updatedFullName.split(' ');
+          final firstName = nameParts.first;
+          final lastName = nameParts.length > 1
+              ? nameParts.sublist(1).join(' ')
+              : null;
+
+          await widget.authState.updateUser(
+            firstName: firstName,
+            lastName: lastName,
+          );
+        } catch (clerkErr) {
+          debugPrint('Gagal sinkronisasi nama ke Clerk: $clerkErr');
+        }
       }
 
       if (!mounted) return;
@@ -228,11 +385,11 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
         ),
       );
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _isSaving = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 
@@ -273,6 +430,12 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
   Future<void> _showKtpPicker() async {
     if (_isReadingKtp || _isIdentityVerified) return;
 
+    FocusScope.of(context).unfocus();
+
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      await _pickAndReadKtp(ImageSource.gallery);
+      return;
+    }
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -357,6 +520,13 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
         if (gender != null) {
           _selectedGender = gender;
         }
+
+        final clerkPhone = widget.authState.user?.phoneNumber;
+        if (_phoneController.text.trim().isEmpty &&
+            clerkPhone != null &&
+            clerkPhone.isNotEmpty) {
+          _phoneController.text = clerkPhone;
+        }
       });
 
       _showMessage(
@@ -365,7 +535,9 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     } catch (e) {
       if (!mounted) return;
 
-      _showMessage('Gagal membaca KTP. Silakan coba foto yang lebih jelas.');
+      debugPrint('KTP OCR Error: $e');
+      final msg = e is ApiException ? e.message : e.toString();
+      _showMessage('Gagal membaca KTP: $msg');
     } finally {
       if (mounted) {
         setState(() {
@@ -384,16 +556,26 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     final isoDate = DateTime.tryParse(input);
     if (isoDate != null) return isoDate;
 
-    // Format Indonesia, misalnya 17/08/2003 atau 17-08-2003.
-    final normalized = input.replaceAll('-', '/');
+    // Format dengan pemisah '-' atau '/' atau '.'
+    final normalized = input.replaceAll('-', '/').replaceAll('.', '/');
     final parts = normalized.split('/');
 
     if (parts.length != 3) return null;
 
     try {
-      final day = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
-      final year = int.parse(parts[2]);
+      int day;
+      int month;
+      int year;
+
+      if (parts[0].length == 4) {
+        year = int.parse(parts[0]);
+        month = int.parse(parts[1]);
+        day = int.parse(parts[2]);
+      } else {
+        day = int.parse(parts[0]);
+        month = int.parse(parts[1]);
+        year = int.parse(parts[2]);
+      }
 
       final date = DateTime(year, month, day);
 
@@ -435,11 +617,13 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     required String label,
     required IconData icon,
     String? hint,
+    Widget? suffixIcon,
   }) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
       prefixIcon: Icon(icon, color: akesaGreen),
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.grey.shade50,
       border: OutlineInputBorder(
@@ -527,6 +711,9 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     TextInputType? keyboardType,
     int maxLines = 1,
     bool enabled = true,
+    int? maxLength,
+    bool showCounter = true,
+    List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
   }) {
     return Padding(
@@ -536,6 +723,16 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
         enabled: enabled,
         keyboardType: keyboardType,
         maxLines: maxLines,
+        maxLength: maxLength,
+        inputFormatters: inputFormatters,
+        buildCounter: (maxLength != null && showCounter)
+            ? null
+            : (
+                context, {
+                required currentLength,
+                required isFocused,
+                maxLength,
+              }) => null,
         textInputAction: maxLines > 1
             ? TextInputAction.newline
             : TextInputAction.next,
@@ -619,22 +816,44 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
   Widget _buildBloodTypeSelector() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
-      child: DropdownButtonFormField<String>(
+      child: DropdownButtonFormField<String?>(
         value: _selectedBloodType,
         decoration: _inputDecoration(
           label: 'Golongan Darah',
           icon: Icons.bloodtype_outlined,
           hint: 'Pilih jika Anda tahu',
+          suffixIcon: _selectedBloodType != null
+              ? IconButton(
+                  icon: const Icon(
+                    Icons.clear_rounded,
+                    size: 20,
+                    color: Colors.grey,
+                  ),
+                  tooltip: 'Kosongkan pilihan',
+                  onPressed: () {
+                    setState(() {
+                      _selectedBloodType = null;
+                    });
+                  },
+                )
+              : null,
         ),
         items: const [
-          DropdownMenuItem(value: 'A+', child: Text('A+')),
-          DropdownMenuItem(value: 'A-', child: Text('A-')),
-          DropdownMenuItem(value: 'B+', child: Text('B+')),
-          DropdownMenuItem(value: 'B-', child: Text('B-')),
-          DropdownMenuItem(value: 'AB+', child: Text('AB+')),
-          DropdownMenuItem(value: 'AB-', child: Text('AB-')),
-          DropdownMenuItem(value: 'O+', child: Text('O+')),
-          DropdownMenuItem(value: 'O-', child: Text('O-')),
+          DropdownMenuItem<String?>(
+            value: null,
+            child: Text(
+              'Belum tahu / Kosongkan',
+              style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+            ),
+          ),
+          DropdownMenuItem<String?>(value: 'A+', child: Text('A+')),
+          DropdownMenuItem<String?>(value: 'A-', child: Text('A-')),
+          DropdownMenuItem<String?>(value: 'B+', child: Text('B+')),
+          DropdownMenuItem<String?>(value: 'B-', child: Text('B-')),
+          DropdownMenuItem<String?>(value: 'AB+', child: Text('AB+')),
+          DropdownMenuItem<String?>(value: 'AB-', child: Text('AB-')),
+          DropdownMenuItem<String?>(value: 'O+', child: Text('O+')),
+          DropdownMenuItem<String?>(value: 'O-', child: Text('O-')),
         ],
         onChanged: (value) {
           setState(() {
@@ -806,6 +1025,8 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   hint: 'Contoh: Budi Santoso',
                   icon: Icons.person_outline,
                   enabled: !_isIdentityVerified,
+                  maxLength: 100,
+                  showCounter: false,
                   validator: (value) =>
                       _requiredValidator(value, fieldName: 'Nama lengkap'),
                 ),
@@ -816,6 +1037,8 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   hint: '16 angka',
                   icon: Icons.badge_outlined,
                   keyboardType: TextInputType.number,
+                  maxLength: 16,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   enabled: !_isIdentityVerified,
                   validator: _nikValidator,
                 ),
@@ -913,6 +1136,8 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   hint: 'Contoh: 081234567890',
                   icon: Icons.phone_outlined,
                   keyboardType: TextInputType.phone,
+                  maxLength: 15,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: _phoneValidator,
                 ),
 
@@ -922,6 +1147,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   hint: 'Masukkan alamat tempat tinggal Anda',
                   icon: Icons.location_on_outlined,
                   maxLines: 3,
+                  maxLength: 255,
                   enabled: !_isIdentityVerified,
                   validator: (value) =>
                       _requiredValidator(value, fieldName: 'Alamat'),
@@ -941,6 +1167,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   hint: 'Contoh: Amoxicillin / Tidak ada',
                   icon: Icons.warning_amber_outlined,
                   maxLines: 2,
+                  maxLength: 255,
                 ),
 
                 _buildTextField(
@@ -949,6 +1176,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   hint: 'Contoh: Asma / Tidak ada',
                   icon: Icons.history_edu_outlined,
                   maxLines: 3,
+                  maxLength: 255,
                 ),
 
                 _buildSectionTitle(
@@ -962,6 +1190,8 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   label: 'Nomor Asuransi',
                   hint: 'Opsional',
                   icon: Icons.health_and_safety_outlined,
+                  maxLength: 50,
+                  showCounter: false,
                 ),
 
                 _buildTextField(
@@ -969,6 +1199,8 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   label: 'Nama Kontak Darurat',
                   hint: 'Opsional',
                   icon: Icons.contact_emergency_outlined,
+                  maxLength: 100,
+                  showCounter: false,
                 ),
 
                 _buildTextField(
@@ -977,6 +1209,8 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                   hint: 'Opsional',
                   icon: Icons.phone_in_talk_outlined,
                   keyboardType: TextInputType.phone,
+                  maxLength: 15,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 ),
 
                 const SizedBox(height: 12),

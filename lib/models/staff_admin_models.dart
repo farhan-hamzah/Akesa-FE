@@ -116,3 +116,23 @@ class HospitalApplication {
       );
 }
 
+class HospitalInvitationValidation {
+  final bool valid;
+  final String targetEmail;
+  final String? message;
+
+  const HospitalInvitationValidation({
+    required this.valid,
+    required this.targetEmail,
+    this.message,
+  });
+
+  factory HospitalInvitationValidation.fromJson(Map<String, dynamic> json) =>
+      HospitalInvitationValidation(
+        valid: json['valid'] == true,
+        targetEmail:
+            '${json['targetEmail'] ?? json['email'] ?? ''}',
+        message: json['message']?.toString(),
+      );
+}
+

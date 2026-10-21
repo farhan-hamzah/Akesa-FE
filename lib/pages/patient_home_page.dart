@@ -80,6 +80,21 @@ class _PatientHomePageState extends State<PatientHomePage> {
     }
   }
 
+  bool get _isIdentityVerified {
+    return (profile?.identityVerificationStatus ?? 'NOT_VERIFIED')
+            .trim()
+            .toUpperCase() ==
+        'VERIFIED';
+  }
+
+  bool get _canAccessPatientQr {
+    return profile != null &&
+        profile!.profileCompleted &&
+        _isIdentityVerified &&
+        profile!.patientCode.trim().isNotEmpty &&
+        profile!.patientCode != '-';
+  }
+
   List<HospitalData> hospitals = [];
   List<AccessRequestData> requests = [];
   List<AuditLogData> history = [];
@@ -106,24 +121,41 @@ class _PatientHomePageState extends State<PatientHomePage> {
     });
 
     try {
+      // 1. Sinkronisasi akun harus berhasil.
       await api.syncUser();
 
+      // 2. Profil belum ada adalah kondisi normal bagi pengguna baru.
       PatientProfileData? loadedProfile;
 
       try {
         loadedProfile = await api.getPatientProfile();
       } on ApiException catch (e) {
-        if (e.statusCode != 404) {
-          rethrow;
-        }
-
+        if (e.statusCode != 404) rethrow;
         loadedProfile = null;
       }
 
-      final loadedRequests = await api.getAccessRequests();
-      final loadedHospitals = await api.getHospitals();
-      final loadedIdentityVerification = await api
-          .getLatestIdentityVerification();
+      // 3. Data tambahan tidak boleh memblokir Home.
+      List<AccessRequestData> loadedRequests = [];
+      List<HospitalData> loadedHospitals = [];
+      IdentityVerificationData? loadedVerification;
+
+      try {
+        loadedRequests = await api.getAccessRequests();
+      } catch (e) {
+        debugPrint('Gagal memuat access requests: $e');
+      }
+
+      try {
+        loadedHospitals = await api.getHospitals();
+      } catch (e) {
+        debugPrint('Gagal memuat daftar rumah sakit: $e');
+      }
+
+      try {
+        loadedVerification = await api.getLatestIdentityVerification();
+      } catch (e) {
+        debugPrint('Gagal memuat status verifikasi: $e');
+      }
 
       if (!mounted) return;
 
@@ -131,7 +163,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
         profile = loadedProfile;
         requests = loadedRequests;
         hospitals = loadedHospitals;
-        _identityVerification = loadedIdentityVerification;
+        _identityVerification = loadedVerification;
         patientQr = null;
       });
 
@@ -143,7 +175,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
         });
       }
     } catch (e) {
-      debugPrint('Gagal load Patient Home: $e');
+      debugPrint('Gagal memuat data utama Patient Home: $e');
 
       if (!mounted) return;
 
@@ -151,11 +183,11 @@ class _PatientHomePageState extends State<PatientHomePage> {
         errorMessage = _formatApiError(e);
       });
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
     }
   }
 
@@ -283,7 +315,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
       if (!mounted) return;
 
-      final result = await Navigator.of(context).push<bool>(
+      await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => IdentityVerificationPage(
             authState: widget.authState,
@@ -326,8 +358,20 @@ class _PatientHomePageState extends State<PatientHomePage> {
   Future<void> _showPatientQr() async {
     if (qrLoading) return;
 
-    if (profile == null) {
-      _showCompleteProfilePrompt();
+    if (!_canAccessPatientQr) {
+      if (profile == null || !(profile?.profileCompleted ?? false)) {
+        _showCompleteProfilePrompt();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Patient code dan QR tersedia setelah identitas '
+              'berhasil diverifikasi.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
       return;
     }
 
@@ -685,10 +729,14 @@ class _PatientHomePageState extends State<PatientHomePage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: PatientCodeCard(
-                patientCode: profile?.patientCode ?? '-',
+                patientCode: _canAccessPatientQr
+                    ? profile!.patientCode
+                    : 'Belum tersedia',
                 qrLoading: qrLoading,
-                onCopyCode: _copyPatientCode,
-                onShowQr: qrLoading ? null : _showPatientQr,
+                onCopyCode: _canAccessPatientQr ? _copyPatientCode : null,
+                onShowQr: _canAccessPatientQr && !qrLoading
+                    ? _showPatientQr
+                    : null,
               ),
             ),
             const SizedBox(height: 18),
@@ -997,19 +1045,30 @@ class _PatientHomePageState extends State<PatientHomePage> {
   // ==========================================================
 
   Future<void> _openProfileForm() async {
-    final profileSaved = await Navigator.of(context).push<bool>(
+    final result = await Navigator.of(context).push<dynamic>(
       MaterialPageRoute(
         builder: (_) => PatientProfileFormPage(
           authState: widget.authState,
           profile: profile,
           identityVerification: _identityVerification,
+          onProfileCreated: () {
+            _loadHome();
+          },
+          onStartIdentityVerification: (ktpImage) async {
+            await _openIdentityVerification();
+          },
         ),
       ),
     );
 
     if (!mounted) return;
 
-    if (profileSaved == true) {
+    if (result != null) {
+      if (result is PatientProfileData) {
+        setState(() {
+          profile = result;
+        });
+      }
       await _loadHome();
     }
   }
@@ -1254,11 +1313,15 @@ class _PatientHomePageState extends State<PatientHomePage> {
   Widget _buildProfilePage() {
     final patient = profile;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(18, 24, 18, 30),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return RefreshIndicator(
+      color: primaryGreen,
+      onRefresh: _loadHome,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(18, 24, 18, 30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           const Text(
             'Profil Saya',
             style: TextStyle(
@@ -1336,11 +1399,15 @@ class _PatientHomePageState extends State<PatientHomePage> {
             child: OutlinedButton.icon(
               onPressed: _openProfileForm,
               icon: Icon(
-                patient == null ? Icons.add_circle_outline : Icons.edit_outlined,
+                patient == null
+                    ? Icons.add_circle_outline
+                    : Icons.edit_outlined,
                 color: primaryGreen,
               ),
               label: Text(
-                patient == null ? 'Lengkapi Profil Pasien' : 'Edit Profil Pasien',
+                patient == null
+                    ? 'Lengkapi Profil Pasien'
+                    : 'Edit Profil Pasien',
                 style: const TextStyle(
                   color: primaryGreen,
                   fontWeight: FontWeight.w600,
@@ -1420,8 +1487,9 @@ class _PatientHomePageState extends State<PatientHomePage> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildProfileInfo({
     required IconData icon,
@@ -1557,6 +1625,8 @@ class _PatientHomePageState extends State<PatientHomePage> {
           });
         } else if (index == 1 && history.isEmpty && !historyLoading) {
           await _loadHistory();
+        } else if (index == 2 && profile == null && !loading) {
+          await _loadHome();
         }
       },
       indicatorColor: Colors.transparent,
@@ -1664,10 +1734,7 @@ class _CompleteProfilePromptSheet extends StatelessWidget {
               icon: const Icon(Icons.edit_note_rounded, size: 20),
               label: const Text(
                 'Lengkapi Sekarang',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
             ),
           ),

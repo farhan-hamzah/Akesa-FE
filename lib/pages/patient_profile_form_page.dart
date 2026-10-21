@@ -83,6 +83,10 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
       _medicalHistoryController.text = profile.medicalHistory ?? '';
       _insuranceController.text = profile.insuranceNumber ?? '';
 
+      _emergencyNameController.text = profile.emergencyContactName ?? '';
+
+      _emergencyPhoneController.text = profile.emergencyContactPhone ?? '';
+
       _selectedGender = profile.gender;
       _selectedBloodType = profile.bloodType;
 
@@ -113,6 +117,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
   Future<void> _checkExistingProfile() async {
     try {
       final existing = await api.getPatientProfile();
+
       if (!mounted) return;
       _currentProfile = existing;
       if (_fullNameController.text.isEmpty && existing.fullName.isNotEmpty) {
@@ -137,6 +142,15 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
       if (_insuranceController.text.isEmpty &&
           existing.insuranceNumber != null) {
         _insuranceController.text = existing.insuranceNumber!;
+      }
+      if (_emergencyNameController.text.isEmpty &&
+          existing.emergencyContactName != null) {
+        _emergencyNameController.text = existing.emergencyContactName!;
+      }
+
+      if (_emergencyPhoneController.text.isEmpty &&
+          existing.emergencyContactPhone != null) {
+        _emergencyPhoneController.text = existing.emergencyContactPhone!;
       }
       if (_selectedGender == null &&
           existing.gender != null &&
@@ -251,6 +265,10 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
       if (_currentProfile == null) {
         try {
+          debugPrint("golongan darah: ${bloodType}");
+          debugPrint("alergi obat: ${drugAllergy}");
+          debugPrint("riwayat sakit: ${medicalHistory}");
+
           result = await api.createPatientProfile(
             nik: _nikController.text.trim(),
             fullName: _fullNameController.text.trim(),
@@ -268,9 +286,6 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
         } on ApiException catch (e) {
           if (e.statusCode == 409 ||
               e.message.toLowerCase().contains('profile_already_exists')) {
-            // Profil sudah terdaftar di backend (misalnya request sebelumnya berhasil masuk DB
-            // namun sempat gagal di tahap audit log/blockchain).
-            // Lakukan update dengan data form saat ini.
             try {
               result = await api.updatePatientProfile(
                 nik: _nikController.text.trim(),

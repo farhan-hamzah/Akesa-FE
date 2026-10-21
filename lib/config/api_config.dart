@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 class ApiConfig {
@@ -14,11 +15,11 @@ class ApiConfig {
 
   static String get ktpOcrBaseUrl {
     if (kIsWeb) {
-      return 'http://localhost:8081';
+      return 'http://localhost:9090';
     } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8081';
+      return 'http://10.0.2.2:9090';
     } else {
-      return 'http://localhost:8081';
+      return 'http://localhost:9090';
     }
   }
 

@@ -1324,174 +1324,174 @@ class _PatientHomePageState extends State<PatientHomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          const Text(
-            'Profil Saya',
-            style: TextStyle(
-              color: textGreen,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
+            const Text(
+              'Profil Saya',
+              style: TextStyle(
+                color: textGreen,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
 
-          const SizedBox(height: 18),
+            const SizedBox(height: 18),
 
-          // ======================================================
-          // PROFILE HEADER
-          // ======================================================
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE3EAE1)),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    color: lightGreen,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    _patientInitial(),
-                    style: const TextStyle(
-                      color: darkGreen,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
+            // ======================================================
+            // PROFILE HEADER
+            // ======================================================
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE3EAE1)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      color: lightGreen,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _patientInitial(),
+                      style: const TextStyle(
+                        color: darkGreen,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                Text(
-                  patient?.fullName ?? 'Pasien',
-                  style: const TextStyle(
-                    color: textGreen,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+                  Text(
+                    patient?.fullName ?? 'Pasien',
+                    style: const TextStyle(
+                      color: textGreen,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 3),
+                  const SizedBox(height: 3),
 
-                Text(
-                  patient?.patientCode ?? '-',
-                  style: const TextStyle(
-                    color: Color(0xFF829181),
-                    fontSize: 11,
+                  Text(
+                    patient?.patientCode ?? '-',
+                    style: const TextStyle(
+                      color: Color(0xFF829181),
+                      fontSize: 11,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          // ======================================================
-          // EDIT PROFILE BUTTON
-          // ======================================================
-          const SizedBox(height: 14),
-
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: OutlinedButton.icon(
-              onPressed: _openProfileForm,
-              icon: Icon(
-                patient == null
-                    ? Icons.add_circle_outline
-                    : Icons.edit_outlined,
-                color: primaryGreen,
+                ],
               ),
-              label: Text(
-                patient == null
-                    ? 'Lengkapi Profil Pasien'
-                    : 'Edit Profil Pasien',
-                style: const TextStyle(
+            ),
+
+            // ======================================================
+            // EDIT PROFILE BUTTON
+            // ======================================================
+            const SizedBox(height: 14),
+
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton.icon(
+                onPressed: _openProfileForm,
+                icon: Icon(
+                  patient == null
+                      ? Icons.add_circle_outline
+                      : Icons.edit_outlined,
                   color: primaryGreen,
-                  fontWeight: FontWeight.w600,
                 ),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFBFD8B9)),
-                backgroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                label: Text(
+                  patient == null
+                      ? 'Lengkapi Profil Pasien'
+                      : 'Edit Profil Pasien',
+                  style: const TextStyle(
+                    color: primaryGreen,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ),
-          ),
-
-          // ======================================================
-          // IDENTITY VERIFICATION
-          // ======================================================
-          const SizedBox(height: 14),
-
-          _buildIdentityVerificationCard(),
-
-          const SizedBox(height: 14),
-
-          // ======================================================
-          // PROFILE INFORMATION
-          // ======================================================
-          _buildProfileInfo(
-            icon: Icons.phone_outlined,
-            label: 'Nomor Telepon',
-            value: patient?.phoneNumber,
-          ),
-
-          _buildProfileInfo(
-            icon: Icons.location_on_outlined,
-            label: 'Alamat',
-            value: patient?.address,
-          ),
-
-          _buildProfileInfo(
-            icon: Icons.bloodtype_outlined,
-            label: 'Golongan Darah',
-            value: patient?.bloodType,
-          ),
-
-          _buildProfileInfo(
-            icon: Icons.health_and_safety_outlined,
-            label: 'Nomor Asuransi',
-            value: patient?.insuranceNumber,
-          ),
-
-          const SizedBox(height: 15),
-
-          // ======================================================
-          // LOGOUT
-          // ======================================================
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: OutlinedButton.icon(
-              onPressed: _logout,
-              icon: const Icon(Icons.logout, color: Colors.redAccent),
-              label: const Text(
-                'Keluar dari Akun',
-                style: TextStyle(
-                  color: Colors.redAccent,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFFFD2D2)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFBFD8B9)),
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+
+            // ======================================================
+            // IDENTITY VERIFICATION
+            // ======================================================
+            const SizedBox(height: 14),
+
+            _buildIdentityVerificationCard(),
+
+            const SizedBox(height: 14),
+
+            // ======================================================
+            // PROFILE INFORMATION
+            // ======================================================
+            _buildProfileInfo(
+              icon: Icons.phone_outlined,
+              label: 'Nomor Telepon',
+              value: patient?.phoneNumber,
+            ),
+
+            _buildProfileInfo(
+              icon: Icons.location_on_outlined,
+              label: 'Alamat',
+              value: patient?.address,
+            ),
+
+            _buildProfileInfo(
+              icon: Icons.bloodtype_outlined,
+              label: 'Golongan Darah',
+              value: patient?.bloodType,
+            ),
+
+            _buildProfileInfo(
+              icon: Icons.health_and_safety_outlined,
+              label: 'Nomor Asuransi',
+              value: patient?.insuranceNumber,
+            ),
+
+            const SizedBox(height: 15),
+
+            // ======================================================
+            // LOGOUT
+            // ======================================================
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout, color: Colors.redAccent),
+                label: const Text(
+                  'Keluar dari Akun',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFFFD2D2)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildProfileInfo({
     required IconData icon,

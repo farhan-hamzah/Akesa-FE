@@ -67,6 +67,7 @@ class PatientProfileData {
 
       emergencyContactName: json['emergencyContactName']?.toString(),
       emergencyContactPhone: json['emergencyContactPhone']?.toString(),
+
       emergencyContactRelation: json['emergencyContactRelation']?.toString(),
 
       identityVerificationStatus:

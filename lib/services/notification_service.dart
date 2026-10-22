@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import '../main.dart';
 import 'akesa_api.dart';
 
 class NotificationService {
@@ -22,6 +24,70 @@ class NotificationService {
       default:
         return false;
     }
+  }
+
+  /// Menampilkan banner notifikasi melayang di atas layar saat aplikasi sedang terbuka
+  void showInAppNotificationBanner({
+    required String title,
+    required String body,
+  }) {
+    final messenger = rootScaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: const Color(0xFF0F172A),
+        elevation: 8,
+        duration: const Duration(seconds: 4),
+        content: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4D8F00).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.notifications_active_rounded,
+                color: Color(0xFF4D8F00),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Inisialisasi Firebase Messaging, minta izin, dan daftarkan token ke backend.
@@ -47,6 +113,13 @@ class NotificationService {
         provisional: false,
       );
 
+      // Aktifkan tampilan notifikasi banner saat aplikasi sedang dibuka
+      await messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
       debugPrint('[NotificationService] Status izin notifikasi: ${settings.authorizationStatus}');
 
       // 2. Ambil token FCM awal dan daftarkan ke backend
@@ -66,8 +139,11 @@ class NotificationService {
 
       // 4. Listen pesan saat aplikasi sedang dibuka (Foreground)
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        debugPrint('[NotificationService] Notifikasi masuk (Foreground): ${message.notification?.title}');
+        final title = message.notification?.title ?? 'Notifikasi Baru';
+        final body = message.notification?.body ?? '';
+        debugPrint('[NotificationService] Notifikasi masuk (Foreground): $title');
         refreshUnreadCount(api);
+        showInAppNotificationBanner(title: title, body: body);
       });
 
       // 5. Listen saat user klik notifikasi di system tray

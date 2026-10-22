@@ -21,4 +21,13 @@ class ApiConfig {
       return 'http://localhost:8081';
     }
   }
+
+  static String get wsUrl {
+    final httpUrl = baseUrl;
+    if (httpUrl.startsWith('https://')) {
+      return '${httpUrl.replaceFirst('https://', 'wss://')}/api/v1/ws';
+    } else {
+      return '${httpUrl.replaceFirst('http://', 'ws://')}/api/v1/ws';
+    }
+  }
 }

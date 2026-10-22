@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../models/access_request_data.dart';
 import '../../services/akesa_api.dart';
 import '../../services/akesa_staff_admin_api.dart';
 import '../../services/notification_service.dart';
+import '../../services/websocket_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/shared/notification_bell_button.dart';
 import '../../widgets/shared/ui_kit.dart';
@@ -29,17 +31,24 @@ class _StaffRequestsTabState extends State<StaffRequestsTab> {
   String? error;
   List<AccessRequestData> items = [];
   String? filter;
+  StreamSubscription? _wsSubscription;
 
   @override
   void initState() {
     super.initState();
     widget.refreshSignal.addListener(_onSignal);
+    _wsSubscription =
+        WebSocketService.instance.onAccessRequestUpdated.listen((_) {
+      debugPrint('[StaffRequestsTab] Menerima sinyal WebSocket -> memuat ulang otomatis');
+      _load(silent: true);
+    });
     _load();
   }
 
   @override
   void dispose() {
     widget.refreshSignal.removeListener(_onSignal);
+    _wsSubscription?.cancel();
     super.dispose();
   }
 

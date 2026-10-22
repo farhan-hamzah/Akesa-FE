@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/akesa_api.dart';
 import '../services/akesa_staff_admin_api.dart';
 import '../services/notification_service.dart';
+import '../services/websocket_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/shared/ui_kit.dart';
 import 'admin/admin_home_page.dart';
@@ -41,6 +42,7 @@ class _RoleGatePageState extends State<RoleGatePage> {
       await NotificationService.instance.refreshUnreadCount(api);
       await NotificationService.instance.initializeFirebase(api);
       NotificationService.instance.startPolling(api);
+      WebSocketService.instance.connect(api);
       if (!mounted) return;
       setState(() => role = r);
     } catch (e) {

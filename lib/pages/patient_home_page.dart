@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import '../models/hospital_data.dart';
 import '../models/patient_profile_data.dart';
 import '../models/patient_qr.dart';
 import '../services/akesa_api.dart';
+import '../services/websocket_service.dart';
 import '../models/identity_verification_data.dart';
 
 import 'patient_profile_form_page.dart';
@@ -106,6 +108,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
   List<HospitalData> hospitals = [];
   List<AccessRequestData> requests = [];
   List<AuditLogData> history = [];
+  StreamSubscription? _wsSubscription;
 
   @override
   void initState() {
@@ -113,8 +116,33 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
     api = AkesaApi(authState: widget.authState);
     NotificationService.instance.startPolling(api);
+    WebSocketService.instance.connect(api);
+    _wsSubscription =
+        WebSocketService.instance.onAccessRequestUpdated.listen((_) {
+      debugPrint('[PatientHomePage] Sinyal WebSocket diterima -> reload requests & unread count');
+      _silentReloadRequests();
+    });
 
     _loadHome();
+  }
+
+  @override
+  void dispose() {
+    _wsSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _silentReloadRequests() async {
+    try {
+      final loadedRequests = await api.getAccessRequests();
+      await NotificationService.instance.refreshUnreadCount(api);
+      if (!mounted) return;
+      setState(() {
+        requests = loadedRequests;
+      });
+    } catch (e) {
+      debugPrint('Gagal reload silent requests: $e');
+    }
   }
 
   // ==========================================================

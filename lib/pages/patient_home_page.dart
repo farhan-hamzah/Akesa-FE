@@ -118,8 +118,8 @@ class _PatientHomePageState extends State<PatientHomePage> {
     WebSocketService.instance.connect(api);
     _wsSubscription =
         WebSocketService.instance.onAccessRequestUpdated.listen((_) {
-      debugPrint('[PatientHomePage] Sinyal WebSocket diterima -> reload requests & unread count');
-      _silentReloadRequests();
+      debugPrint('[PatientHomePage] Sinyal WebSocket diterima -> reload requests, history & unread count');
+      _silentReloadData();
     });
 
     _loadHome();
@@ -131,16 +131,22 @@ class _PatientHomePageState extends State<PatientHomePage> {
     super.dispose();
   }
 
-  Future<void> _silentReloadRequests() async {
+  Future<void> _silentReloadData() async {
     try {
-      final loadedRequests = await api.getAccessRequests();
+      final results = await Future.wait([
+        api.getAccessRequests(),
+        api.getHistory(),
+      ]);
+      final loadedRequests = results[0] as List<AccessRequestData>;
+      final loadedHistory = results[1] as List<AuditLogData>;
       await NotificationService.instance.refreshUnreadCount(api);
       if (!mounted) return;
       setState(() {
         requests = loadedRequests;
+        history = loadedHistory;
       });
     } catch (e) {
-      debugPrint('Gagal reload silent requests: $e');
+      debugPrint('Gagal reload silent data: $e');
     }
   }
 
@@ -200,11 +206,20 @@ class _PatientHomePageState extends State<PatientHomePage> {
         debugPrint('Gagal memuat unread notification count: $e');
       }
 
+      // 5. Load history aktivitas
+      List<AuditLogData> loadedHistory = [];
+      try {
+        loadedHistory = await api.getHistory();
+      } catch (e) {
+        debugPrint('Gagal memuat history: $e');
+      }
+
       if (!mounted) return;
 
       setState(() {
         profile = loadedProfile;
         requests = loadedRequests;
+        history = loadedHistory;
         hospitals = loadedHospitals;
         _identityVerification = loadedVerification;
         patientQr = null;
@@ -1670,8 +1685,8 @@ class _PatientHomePageState extends State<PatientHomePage> {
               _showCompleteProfilePrompt();
             }
           });
-        } else if (index == 1 && history.isEmpty && !historyLoading) {
-          await _loadHistory();
+        } else if (index == 1) {
+          _loadHistory();
         } else if (index == 2 && profile == null && !loading) {
           await _loadHome();
         }

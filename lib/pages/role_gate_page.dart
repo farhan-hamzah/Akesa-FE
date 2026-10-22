@@ -41,7 +41,6 @@ class _RoleGatePageState extends State<RoleGatePage> {
       final r = await api.getMyRole();
       await NotificationService.instance.refreshUnreadCount(api);
       await NotificationService.instance.initializeFirebase(api);
-      NotificationService.instance.startPolling(api);
       WebSocketService.instance.connect(api);
       if (!mounted) return;
       setState(() => role = r);

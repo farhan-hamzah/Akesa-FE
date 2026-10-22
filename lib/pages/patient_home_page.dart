@@ -115,7 +115,6 @@ class _PatientHomePageState extends State<PatientHomePage> {
     super.initState();
 
     api = AkesaApi(authState: widget.authState);
-    NotificationService.instance.startPolling(api);
     WebSocketService.instance.connect(api);
     _wsSubscription =
         WebSocketService.instance.onAccessRequestUpdated.listen((_) {

@@ -198,27 +198,8 @@ class NotificationService {
     }
   }
 
-  Timer? _pollingTimer;
-
-  /// Memulai pengecekan otomatis secara berkala (misal setiap 5 detik)
-  /// agar lonceng notifikasi langsung menyala sendiri secara real-time.
-  void startPolling(AkesaApi api, {Duration interval = const Duration(seconds: 5)}) {
-    _pollingTimer?.cancel();
-    refreshUnreadCount(api);
-    _pollingTimer = Timer.periodic(interval, (_) {
-      refreshUnreadCount(api);
-    });
-  }
-
-  /// Menghentikan pengecekan otomatis (misal saat logout).
-  void stopPolling() {
-    _pollingTimer?.cancel();
-    _pollingTimer = null;
-  }
-
   /// Unregister device token from backend & FCM (e.g. upon user logout).
   Future<void> clearDeviceToken(AkesaApi api) async {
-    stopPolling();
 
     final token = _registeredToken;
     if (token != null && token.isNotEmpty) {

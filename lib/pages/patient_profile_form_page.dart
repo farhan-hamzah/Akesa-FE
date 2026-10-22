@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -416,6 +417,824 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  String get _currentEmail {
+    final user = widget.authState.user;
+    if (user == null) return '-';
+    final primaryId = user.primaryEmailAddressId;
+    if (primaryId != null && user.emailAddresses != null) {
+      for (final e in user.emailAddresses!) {
+        if (e.id == primaryId) {
+          return e.emailAddress;
+        }
+      }
+    }
+    return user.emailAddresses?.firstOrNull?.emailAddress ?? '-';
+  }
+
+  String _formatClerkError(Object error) {
+    final message = error.toString().toLowerCase();
+    debugPrint('Clerk error: $message');
+
+    if (message.contains('form_password_incorrect') ||
+        message.contains('password_incorrect') ||
+        message.contains('incorrect password') ||
+        message.contains('invalid password')) {
+      return 'Kata sandi saat ini yang Anda masukkan salah.';
+    }
+
+    if (message.contains('form_identifier_exists') ||
+        message.contains('already exists') ||
+        message.contains('taken') ||
+        message.contains('identifier_already_exists')) {
+      return 'Email tersebut sudah terdaftar di akun lain. Silakan gunakan email lain.';
+    }
+
+    if (message.contains('form_code_incorrect') ||
+        message.contains('verification_code_incorrect') ||
+        message.contains('code is incorrect') ||
+        message.contains('incorrect code')) {
+      return 'Kode OTP verifikasi salah. Silakan periksa kembali email Anda.';
+    }
+
+    if (message.contains('verification_expired') ||
+        message.contains('code expired')) {
+      return 'Kode verifikasi sudah kedaluwarsa. Silakan ajukan perubahan kembali.';
+    }
+
+    if (message.contains('password') && message.contains('length')) {
+      return 'Kata sandi baru minimal harus 8 karakter.';
+    }
+
+    return 'Gagal memproses permintaan: ${error.toString().replaceAll('Exception: ', '').replaceAll('ClerkError: ', '')}';
+  }
+
+  void _showChangeEmailSheet() {
+    final newEmailController = TextEditingController();
+    final otpCodeController = TextEditingController();
+    bool isOtpSent = false;
+    bool isLoading = false;
+    String? sheetError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: akesaGreen.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.alternate_email_rounded, color: akesaGreen),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Ubah Email Login',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                              Text(
+                                isOtpSent
+                                    ? 'Masukkan kode OTP dari email baru'
+                                    : 'Email saat ini: $_currentEmail',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(bottomSheetContext),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    if (sheetError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                sheetError!,
+                                style: const TextStyle(color: Colors.red, fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    if (!isOtpSent) ...[
+                      const Text(
+                        'Alamat Email Baru',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: newEmailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: _inputDecoration(
+                          label: 'Email Baru',
+                          icon: Icons.email_outlined,
+                          hint: 'nama@domain.com',
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: isLoading
+                              ? null
+                              : () async {
+                                  final newEmail = newEmailController.text.trim().toLowerCase();
+                                  if (newEmail.isEmpty ||
+                                      !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(newEmail)) {
+                                    setSheetState(() => sheetError = 'Format email tidak valid.');
+                                    return;
+                                  }
+
+                                  if (newEmail == _currentEmail.toLowerCase()) {
+                                    setSheetState(() => sheetError = 'Email baru sama dengan email saat ini.');
+                                    return;
+                                  }
+
+                                  setSheetState(() {
+                                    isLoading = true;
+                                    sheetError = null;
+                                  });
+
+                                  try {
+                                    // 1. Cek apakah email yang dimasukkan sudah ada di akun ini (misal email sebelumnya)
+                                    clerk.Email? existingOnUser;
+                                    for (final em in widget.authState.user?.emailAddresses ?? <clerk.Email>[]) {
+                                      if (em.emailAddress.toLowerCase() == newEmail) {
+                                        existingOnUser = em;
+                                        break;
+                                      }
+                                    }
+
+                                    if (existingOnUser != null) {
+                                      if (existingOnUser.isVerified) {
+                                        // Email sudah terverifikasi di akun ini -> langsung jadikan primary!
+                                        await widget.authState.updateUser(primaryEmailAddressId: existingOnUser.id);
+
+                                        // Bersihkan email sekunder lainnya agar email lama terlepas dan tidak terkunci
+                                        for (final em in widget.authState.user?.emailAddresses ?? <clerk.Email>[]) {
+                                          if (em.id != existingOnUser.id) {
+                                            try {
+                                              await widget.authState.deleteIdentifyingData(em);
+                                            } catch (_) {}
+                                          }
+                                        }
+
+                                        await api.syncUser();
+
+                                        if (bottomSheetContext.mounted) {
+                                          Navigator.pop(bottomSheetContext);
+                                        }
+                                        if (mounted) {
+                                          setState(() {});
+                                          _showMessage('Email login berhasil diubah kembali ke $newEmail!');
+                                        }
+                                        return;
+                                      } else {
+                                        // Jika belum terverifikasi, hapus dulu agar bisa request kode baru
+                                        try {
+                                          await widget.authState.deleteIdentifyingData(existingOnUser);
+                                        } catch (_) {}
+                                      }
+                                    }
+
+                                    // 2. Daftarkan email baru dan minta Clerk kirim OTP
+                                    await widget.authState.addIdentifyingData(
+                                      newEmail,
+                                      clerk.IdentifierType.emailAddress,
+                                    );
+                                    setSheetState(() {
+                                      isLoading = false;
+                                      isOtpSent = true;
+                                    });
+                                  } catch (e) {
+                                    setSheetState(() {
+                                      isLoading = false;
+                                      sheetError = _formatClerkError(e);
+                                    });
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: akesaGreen,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('Kirim Kode Verifikasi', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ] else ...[
+                      Text(
+                        'Kami telah mengirimkan 6 digit kode OTP ke ${newEmailController.text.trim()}. Masukkan kode tersebut untuk mengonfirmasi email baru Anda:',
+                        style: TextStyle(fontSize: 13, height: 1.4, color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: otpCodeController,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 8),
+                        decoration: _inputDecoration(
+                          label: 'Kode OTP 6 Digit',
+                          icon: Icons.key_rounded,
+                          hint: '123456',
+                        ).copyWith(
+                          counterText: '',
+                          hintStyle: TextStyle(
+                            color: Colors.grey.withValues(alpha: 0.35),
+                            fontSize: 20,
+                            fontWeight: FontWeight.normal,
+                            letterSpacing: 8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: isLoading
+                              ? null
+                              : () async {
+                                  final code = otpCodeController.text.trim();
+                                  if (code.length < 6) {
+                                    setSheetState(() => sheetError = 'Masukkan 6 digit kode verifikasi.');
+                                    return;
+                                  }
+
+                                  setSheetState(() {
+                                    isLoading = true;
+                                    sheetError = null;
+                                  });
+
+                                  try {
+                                    final newEmail = newEmailController.text.trim().toLowerCase();
+                                    final uid = widget.authState.user?.identifierFrom(newEmail);
+                                    if (uid == null) {
+                                      throw Exception('Identifikasi email tidak ditemukan.');
+                                    }
+
+                                    // 1. Verifikasi OTP di Clerk
+                                    await widget.authState.verifyIdentifyingData(uid, code);
+
+                                    // 2. Jadikan sebagai primary email di Clerk
+                                    await widget.authState.updateUser(primaryEmailAddressId: uid.id);
+
+                                    // 3. Hapus email lama agar terlepas dari akun dan tidak saling mengunci
+                                    for (final em in widget.authState.user?.emailAddresses ?? <clerk.Email>[]) {
+                                      if (em.id != uid.id) {
+                                        try {
+                                          await widget.authState.deleteIdentifyingData(em);
+                                        } catch (err) {
+                                          debugPrint('Gagal hapus email sekunder lama: $err');
+                                        }
+                                      }
+                                    }
+
+                                    // 4. Sinkronisasikan dengan backend Akesa
+                                    await api.syncUser();
+
+                                    if (bottomSheetContext.mounted) {
+                                      Navigator.pop(bottomSheetContext);
+                                    }
+                                    if (mounted) {
+                                      setState(() {});
+                                      _showMessage('Email login berhasil diubah menjadi $newEmail dan tersinkronisasi!');
+                                    }
+                                  } catch (e) {
+                                    setSheetState(() {
+                                      isLoading = false;
+                                      sheetError = _formatClerkError(e);
+                                    });
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: akesaGreen,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('Verifikasi & Perbarui Email', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showChangePasswordSheet() {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    bool isLoading = false;
+    String? sheetError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: akesaGreen.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.lock_reset_rounded, color: akesaGreen),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Ubah Kata Sandi',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
+                                Text(
+                                  'Gunakan minimal 8 karakter dengan kombinasi aman',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(bottomSheetContext),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      if (sheetError != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  sheetError!,
+                                  style: const TextStyle(color: Colors.red, fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // Field 1: Kata Sandi Saat Ini
+                      const Text(
+                        'Kata Sandi Saat Ini',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: currentPasswordController,
+                        obscureText: obscureCurrent,
+                        decoration: _inputDecoration(
+                          label: 'Kata Sandi Saat Ini',
+                          icon: Icons.lock_outline,
+                          hint: '••••••••',
+                        ).copyWith(
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureCurrent ? Icons.visibility_off : Icons.visibility,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () => setSheetState(() => obscureCurrent = !obscureCurrent),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Field 2: Kata Sandi Baru
+                      const Text(
+                        'Kata Sandi Baru',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: newPasswordController,
+                        obscureText: obscureNew,
+                        decoration: _inputDecoration(
+                          label: 'Kata Sandi Baru',
+                          icon: Icons.lock_reset_outlined,
+                          hint: 'Minimal 8 karakter',
+                        ).copyWith(
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureNew ? Icons.visibility_off : Icons.visibility,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () => setSheetState(() => obscureNew = !obscureNew),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Field 3: Konfirmasi Kata Sandi Baru
+                      const Text(
+                        'Konfirmasi Kata Sandi Baru',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: confirmPasswordController,
+                        obscureText: obscureConfirm,
+                        decoration: _inputDecoration(
+                          label: 'Ulangi Kata Sandi Baru',
+                          icon: Icons.check_circle_outline,
+                          hint: '••••••••',
+                        ).copyWith(
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () => setSheetState(() => obscureConfirm = !obscureConfirm),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: isLoading
+                              ? null
+                              : () async {
+                                  final currentPass = currentPasswordController.text;
+                                  final newPass = newPasswordController.text;
+                                  final confirmPass = confirmPasswordController.text;
+
+                                  if (currentPass.isEmpty) {
+                                    setSheetState(() => sheetError = 'Kata sandi saat ini wajib diisi.');
+                                    return;
+                                  }
+
+                                  if (newPass.length < 8) {
+                                    setSheetState(() => sheetError = 'Kata sandi baru minimal 8 karakter.');
+                                    return;
+                                  }
+
+                                  if (newPass == currentPass) {
+                                    setSheetState(() => sheetError = 'Kata sandi baru harus berbeda dari kata sandi lama.');
+                                    return;
+                                  }
+
+                                  if (newPass != confirmPass) {
+                                    setSheetState(() => sheetError = 'Konfirmasi kata sandi tidak cocok.');
+                                    return;
+                                  }
+
+                                  setSheetState(() {
+                                    isLoading = true;
+                                    sheetError = null;
+                                  });
+
+                                  try {
+                                    // 1. Update password di Clerk
+                                    await widget.authState.updateUserPassword(
+                                      currentPass,
+                                      newPass,
+                                      signOut: false,
+                                    );
+
+                                    // 2. Sinkronkan token & session ke backend Go
+                                    await api.syncUser();
+
+                                    if (bottomSheetContext.mounted) {
+                                      Navigator.pop(bottomSheetContext);
+                                    }
+                                    if (mounted) {
+                                      _showMessage('Kata sandi berhasil diperbarui dan tersinkronisasi!');
+                                    }
+                                  } catch (e) {
+                                    setSheetState(() {
+                                      isLoading = false;
+                                      sheetError = _formatClerkError(e);
+                                    });
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: akesaGreen,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('Simpan Kata Sandi Baru', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAccountSecuritySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle(
+          icon: Icons.shield_outlined,
+          title: 'Akun & Keamanan',
+          description: 'Kelola email login dan kata sandi akun Akesa Anda yang terhubung dengan Clerk.',
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // 1. Email Tile
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: akesaGreen.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.alternate_email_rounded, color: akesaGreen, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Email Akun',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _currentEmail,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1E293B),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Terverifikasi di Clerk',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _showChangeEmailSheet,
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Ubah'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: akesaGreen,
+                        side: const BorderSide(color: akesaGreen),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              Divider(height: 1, color: Colors.grey.shade100),
+
+              // 2. Password Tile
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.lock_outline_rounded, color: Colors.blue, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Kata Sandi',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            '••••••••••••',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Terenkripsi aman',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _showChangePasswordSheet,
+                      icon: const Icon(Icons.key_outlined, size: 16),
+                      label: const Text('Ubah'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue.shade700,
+                        side: BorderSide(color: Colors.blue.shade700),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1210,6 +2029,10 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                 ),
 
                 const SizedBox(height: 12),
+
+                _buildAccountSecuritySection(),
+
+                const SizedBox(height: 24),
 
                 SizedBox(
                   width: double.infinity,

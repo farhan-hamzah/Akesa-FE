@@ -20,6 +20,8 @@ import '../widgets/patient/access_request_card.dart';
 import '../widgets/patient/history_card.dart';
 import '../widgets/patient/patient_code_card.dart';
 import '../widgets/patient/patient_qr_sheet.dart';
+import '../services/notification_service.dart';
+import '../widgets/shared/notification_bell_button.dart';
 
 class PatientHomePage extends StatefulWidget {
   final ClerkAuthState authState;
@@ -95,6 +97,12 @@ class _PatientHomePageState extends State<PatientHomePage> {
         profile!.patientCode != '-';
   }
 
+  bool get _hasPatientCode {
+    return profile != null &&
+        profile!.patientCode.trim().isNotEmpty &&
+        profile!.patientCode != '-';
+  }
+
   List<HospitalData> hospitals = [];
   List<AccessRequestData> requests = [];
   List<AuditLogData> history = [];
@@ -104,6 +112,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
     super.initState();
 
     api = AkesaApi(authState: widget.authState);
+    NotificationService.instance.startPolling(api);
 
     _loadHome();
   }
@@ -155,6 +164,13 @@ class _PatientHomePageState extends State<PatientHomePage> {
         loadedVerification = await api.getLatestIdentityVerification();
       } catch (e) {
         debugPrint('Gagal memuat status verifikasi: $e');
+      }
+
+      // 4. Refresh unread notification count
+      try {
+        await NotificationService.instance.refreshUnreadCount(api);
+      } catch (e) {
+        debugPrint('Gagal memuat unread notification count: $e');
       }
 
       if (!mounted) return;
@@ -623,6 +639,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
   Future<void> _logout() async {
     try {
+      await NotificationService.instance.clearDeviceToken(api);
       await widget.authState.signOut();
     } catch (e) {
       debugPrint('Logout error: $e');
@@ -729,14 +746,12 @@ class _PatientHomePageState extends State<PatientHomePage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: PatientCodeCard(
-                patientCode: _canAccessPatientQr
+                patientCode: _hasPatientCode
                     ? profile!.patientCode
                     : 'Belum tersedia',
                 qrLoading: qrLoading,
-                onCopyCode: _canAccessPatientQr ? _copyPatientCode : null,
-                onShowQr: _canAccessPatientQr && !qrLoading
-                    ? _showPatientQr
-                    : null,
+                onCopyCode: _hasPatientCode ? _copyPatientCode : null,
+                onShowQr: !qrLoading ? _showPatientQr : null,
               ),
             ),
             const SizedBox(height: 18),
@@ -800,6 +815,11 @@ class _PatientHomePageState extends State<PatientHomePage> {
                     ],
                   ),
                 ),
+                NotificationBellButton(
+                  authState: widget.authState,
+                  onOpened: () => NotificationService.instance.refreshUnreadCount(api),
+                ),
+                const SizedBox(width: 8),
                 Container(
                   width: 44,
                   height: 44,

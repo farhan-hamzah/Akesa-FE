@@ -1,12 +1,39 @@
 import 'dart:ui';
 
 import 'package:clerk_flutter/clerk_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'config/clerk_config.dart';
 import 'pages/auth_page.dart';
+import 'firebase_options.dart';
 
-void main() {
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  debugPrint('[FCM Background] ID: ${message.messageId} | Judul: ${message.notification?.title}');
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    }
+  } catch (e) {
+    debugPrint('[Firebase Init Error] $e');
+  }
+
   runApp(
     ClerkAuth(
       config: ClerkAuthConfig(publishableKey: ClerkConfig.publishableKey),

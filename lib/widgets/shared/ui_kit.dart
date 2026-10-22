@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/api_exception.dart';
 import '../../pages/auth_page.dart';
+import '../../services/akesa_api.dart';
+import '../../services/notification_service.dart';
 import '../../theme/app_colors.dart';
 
 const Color kBg = Color(0xFFFDFEFC);
@@ -357,6 +359,8 @@ class EmptyState extends StatelessWidget {
 /// navigation stack kembali ke halaman login (AuthPage).
 Future<void> performLogout(BuildContext context, ClerkAuthState authState) async {
   try {
+    final api = AkesaApi(authState: authState);
+    await NotificationService.instance.clearDeviceToken(api);
     await authState.signOut();
   } catch (e) {
     debugPrint('Logout error: $e');
@@ -577,7 +581,13 @@ class SoftButton extends StatelessWidget {
 class PageHeader extends StatelessWidget {
   final String title;
   final String subtitle;
-  const PageHeader({super.key, required this.title, required this.subtitle});
+  final Widget? trailing;
+  const PageHeader({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -601,30 +611,38 @@ class PageHeader extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 12.5,
-                ),
-              ),
+              ?trailing,
             ],
           ),
         ),
@@ -653,17 +671,19 @@ class TabPage extends StatelessWidget {
   final String title;
   final String subtitle;
   final Widget child;
+  final Widget? trailing;
   const TabPage({
     super.key,
     required this.title,
     required this.subtitle,
     required this.child,
+    this.trailing,
   });
 
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      PageHeader(title: title, subtitle: subtitle),
+      PageHeader(title: title, subtitle: subtitle, trailing: trailing),
       Expanded(child: CenteredBody(child: child)),
     ],
   );

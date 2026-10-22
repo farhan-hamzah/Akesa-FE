@@ -16,6 +16,7 @@ import '../models/patient_qr.dart';
 import '../models/identity_verification_data.dart';
 import '../models/ktp_ocr_data.dart';
 import '../models/staff_admin_models.dart';
+import '../models/notification_data.dart';
 
 class AkesaApi {
   final ClerkAuthState authState;
@@ -120,6 +121,26 @@ class AkesaApi {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
     debugPrint('[AkesaApi] --> PUT $uri');
     final response = await http.put(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
+  }
+
+  Future<dynamic> _patch(String path) async {
+    final headers = await _authHeaders();
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    debugPrint('[AkesaApi] --> PATCH $uri');
+    final response = await http.patch(uri, headers: headers);
+    return _handleResponse(response);
+  }
+
+  Future<dynamic> _deleteJson(String path, Map<String, dynamic> body) async {
+    final headers = await _authHeaders();
+    final uri = Uri.parse('${ApiConfig.baseUrl}$path');
+    debugPrint('[AkesaApi] --> DELETE $uri');
+    final response = await http.delete(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -690,5 +711,65 @@ class AkesaApi {
     }
 
     return HospitalApplication.fromJson(json);
+  }
+
+  // ----------------------------------------------------------
+  // NOTIFICATIONS
+  // ----------------------------------------------------------
+
+  Future<NotificationListResponse> getNotifications({
+    bool unreadOnly = false,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final queryParams = <String, String>{
+      if (unreadOnly) 'unread_only': 'true',
+      'limit': limit.toString(),
+      'offset': offset.toString(),
+    };
+    final queryString = Uri(queryParameters: queryParams).query;
+    final json = await _get('/api/v1/notifications?$queryString');
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(500, 'Format daftar notifikasi tidak valid.');
+    }
+    return NotificationListResponse.fromJson(json);
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final json = await _get('/api/v1/notifications/unread-count');
+    if (json is Map<String, dynamic> && json.containsKey('unreadCount')) {
+      final count = json['unreadCount'];
+      if (count is int) return count;
+      return int.tryParse(count.toString()) ?? 0;
+    }
+    return 0;
+  }
+
+  Future<NotificationData> markNotificationAsRead(String id) async {
+    final json = await _patch('/api/v1/notifications/$id/read');
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(500, 'Format respon baca notifikasi tidak valid.');
+    }
+    return NotificationData.fromJson(json);
+  }
+
+  Future<void> markAllNotificationsAsRead() async {
+    await _post('/api/v1/notifications/read-all');
+  }
+
+  Future<void> registerDeviceToken({
+    required String token,
+    String platform = 'android',
+  }) async {
+    await _postJson('/api/v1/notifications/device-token', {
+      'token': token,
+      'platform': platform,
+    });
+  }
+
+  Future<void> unregisterDeviceToken(String token) async {
+    await _deleteJson('/api/v1/notifications/device-token', {
+      'token': token,
+    });
   }
 }

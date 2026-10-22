@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../models/access_request_data.dart';
 import '../../services/akesa_api.dart';
 import '../../services/akesa_staff_admin_api.dart';
+import '../../services/notification_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/shared/notification_bell_button.dart';
 import '../../widgets/shared/ui_kit.dart';
 import 'staff_approved_data_page.dart';
 
@@ -47,6 +49,7 @@ class _StaffRequestsTabState extends State<StaffRequestsTab> {
     if (!silent) setState(() => loading = true);
     try {
       final r = await widget.api.staffGetAccessRequests();
+      await NotificationService.instance.refreshUnreadCount(widget.api);
       if (!mounted) return;
       setState(() {
         items = r;
@@ -73,6 +76,10 @@ class _StaffRequestsTabState extends State<StaffRequestsTab> {
     return TabPage(
       title: 'Permintaan Akses',
       subtitle: 'Pantau status izin data pasien rumah sakit Anda',
+      trailing: NotificationBellButton(
+        authState: widget.api.authState,
+        onOpened: () => NotificationService.instance.refreshUnreadCount(widget.api),
+      ),
       child: loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primaryGreen),

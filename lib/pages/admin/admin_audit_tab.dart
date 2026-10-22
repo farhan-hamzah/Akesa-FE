@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../models/staff_admin_models.dart';
 import '../../services/akesa_api.dart';
+import '../../services/notification_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/shared/notification_bell_button.dart';
 import '../../widgets/shared/ui_kit.dart';
 
 class AdminAuditTab extends StatefulWidget {
@@ -35,6 +37,7 @@ class _AdminAuditTabState extends State<AdminAuditTab> {
       final ChainVerification r = raw is ChainVerification
           ? raw
           : ChainVerification.fromJson(Map<String, dynamic>.from(raw as Map));
+      await NotificationService.instance.refreshUnreadCount(widget.api);
       if (!mounted) return;
       setState(() {
         result = r;
@@ -52,6 +55,10 @@ class _AdminAuditTabState extends State<AdminAuditTab> {
     return TabPage(
       title: 'Integritas Audit',
       subtitle: 'Pastikan catatan akses data tidak pernah diubah',
+      trailing: NotificationBellButton(
+        authState: widget.api.authState,
+        onOpened: () => NotificationService.instance.refreshUnreadCount(widget.api),
+      ),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
         children: [

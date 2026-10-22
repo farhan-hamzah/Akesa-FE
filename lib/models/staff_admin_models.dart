@@ -130,9 +130,123 @@ class HospitalInvitationValidation {
   factory HospitalInvitationValidation.fromJson(Map<String, dynamic> json) =>
       HospitalInvitationValidation(
         valid: json['valid'] == true,
-        targetEmail:
-            '${json['targetEmail'] ?? json['email'] ?? ''}',
+        targetEmail: '${json['targetEmail'] ?? json['email'] ?? ''}',
         message: json['message']?.toString(),
       );
 }
 
+class AdminIdentityVerification {
+  final String id;
+  final String patientId;
+  final String status;
+  final String documentType;
+
+  // Data dari profil pasien
+  final String? patientCode;
+  final String? fullName;
+  final String? nik;
+  final String? dateOfBirth;
+  final String? gender;
+  final String? phoneNumber;
+  final String? address;
+
+  // Data medis
+  final String? bloodType;
+  final String? drugAllergy;
+  final String? medicalHistory;
+  final String? insuranceNumber;
+
+  // Kontak darurat
+  final String? emergencyContactName;
+  final String? emergencyContactPhone;
+
+  // Hasil pembacaan KTP/OCR dari backend
+  final String? extractedFullName;
+  final String? extractedNik;
+  final String? extractedDateOfBirth;
+  final String? extractedGender;
+
+  final String? documentStatus;
+  final String? livenessStatus;
+  final String? faceMatchStatus;
+  final String? failureReason;
+
+  // Timestamp pengajuan
+  final String? createdAt;
+
+  const AdminIdentityVerification({
+    required this.id,
+    required this.patientId,
+    required this.status,
+    required this.documentType,
+    this.patientCode,
+    this.fullName,
+    this.nik,
+    this.dateOfBirth,
+    this.gender,
+    this.phoneNumber,
+    this.address,
+    this.bloodType,
+    this.drugAllergy,
+    this.medicalHistory,
+    this.insuranceNumber,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
+    this.extractedFullName,
+    this.extractedNik,
+    this.extractedDateOfBirth,
+    this.extractedGender,
+    this.documentStatus,
+    this.livenessStatus,
+    this.faceMatchStatus,
+    this.failureReason,
+    this.createdAt,
+  });
+
+  factory AdminIdentityVerification.fromJson(Map<String, dynamic> json) {
+    String? readString(dynamic value) {
+      if (value == null) return null;
+      final result = value.toString().trim();
+      return result.isEmpty ? null : result;
+    }
+
+    final patient = json['patient'] is Map<String, dynamic>
+        ? json['patient'] as Map<String, dynamic>
+        : json;
+
+    return AdminIdentityVerification(
+      id: json['id']?.toString() ?? '',
+      patientId:
+          json['patientId']?.toString() ?? patient['id']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'UNKNOWN',
+      documentType: json['documentType']?.toString() ?? 'KTP',
+
+      patientCode: readString(patient['patientCode']),
+      fullName: readString(patient['fullName']),
+      nik: readString(patient['nik']),
+      dateOfBirth: readString(patient['dateOfBirth']),
+      gender: readString(patient['gender']),
+      phoneNumber: readString(patient['phoneNumber']),
+      address: readString(patient['address']),
+
+      bloodType: readString(patient['bloodType']),
+      drugAllergy: readString(patient['drugAllergy']),
+      medicalHistory: readString(patient['medicalHistory']),
+      insuranceNumber: readString(patient['insuranceNumber']),
+
+      emergencyContactName: readString(patient['emergencyContactName']),
+      emergencyContactPhone: readString(patient['emergencyContactPhone']),
+
+      extractedFullName: readString(json['extractedFullName']),
+      extractedNik: readString(json['extractedNik']),
+      extractedDateOfBirth: readString(json['extractedDateOfBirth']),
+      extractedGender: readString(json['extractedGender']),
+
+      documentStatus: readString(json['documentStatus']),
+      livenessStatus: readString(json['livenessStatus']),
+      faceMatchStatus: readString(json['faceMatchStatus']),
+      failureReason: readString(json['failureReason']),
+      createdAt: readString(json['createdAt']),
+    );
+  }
+}

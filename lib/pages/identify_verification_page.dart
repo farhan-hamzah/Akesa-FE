@@ -47,6 +47,9 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
 
   bool loadingVerification = true;
 
+  bool ktpConfirmed = false;
+  bool ktpNeedsUpload = false;
+
   IdentityVerificationData? verification;
   KtpOcrData? ktpOcrResult;
 
@@ -66,6 +69,15 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
   Future<void> _loadVerification() async {
     try {
       final result = await api.getIdentityVerification(widget.verificationId);
+
+      ktpUploaded = result.documentUploaded;
+      selfieUploaded = result.selfieUploaded;
+
+      ktpConfirmed = result.documentUploaded;
+      ktpNeedsUpload = false;
+
+      currentStep = result.documentUploaded ? 1 : 0;
+      loadingVerification = false;
 
       if (!mounted) return;
 
@@ -112,6 +124,8 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
 
       setState(() {
         ktpImage = file;
+        ktpConfirmed = false;
+        ktpNeedsUpload = true;
       });
     } catch (e) {
       _showError('Gagal mengambil foto KTP.');
@@ -178,12 +192,10 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
     if (uploadingKtp || processingKtpOcr) return;
 
     setState(() {
-      uploadingKtp = true;
       processingKtpOcr = true;
     });
 
     try {
-      // 1. Baca informasi pada KTP melalui OCR.
       final ocrResult = await api.uploadKtpForOcr(image);
 
       if (!mounted) return;
@@ -192,57 +204,33 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
         ktpOcrResult = ocrResult;
       });
 
-      // 2. Tampilkan hasil OCR agar pengguna dapat memeriksanya.
       final confirmed = await _confirmOcrResult(ocrResult);
 
-      if (!mounted) return;
-
-      if (confirmed != true) {
-        setState(() {
-          uploadingKtp = false;
-          processingKtpOcr = false;
-        });
-        return;
-      }
-
-      // 3. Unggah dokumen ke sesi verifikasi identitas.
-      final result = await api.uploadIdentityDocument(
-        verificationId: widget.verificationId,
-        file: image,
-      );
-
-      if (!mounted) return;
+      if (!mounted || confirmed != true) return;
 
       setState(() {
-        verification = result;
-        ktpUploaded = result.documentUploaded;
-        uploadingKtp = false;
-        processingKtpOcr = false;
-
-        if (ktpUploaded) {
-          currentStep = 1;
-        }
+        ktpConfirmed = true;
+        currentStep = 1;
       });
 
-      if (ktpUploaded) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'KTP berhasil diproses dan disimpan. Silakan lanjutkan dengan swafoto.',
-            ),
-            behavior: SnackBarBehavior.floating,
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Data KTP berhasil dikonfirmasi. '
+            'Silakan ambil swafoto untuk melanjutkan.',
           ),
-        );
-      }
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        uploadingKtp = false;
-        processingKtpOcr = false;
-      });
-
       _showError(_formatError(e));
+    } finally {
+      if (mounted) {
+        setState(() {
+          processingKtpOcr = false;
+        });
+      }
     }
   }
 
@@ -318,15 +306,20 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
   // ==========================================================
 
   Future<void> _uploadSelfie() async {
-    final image = selfieImage;
+    final selfie = selfieImage;
 
-    if (image == null) {
+    if (selfie == null) {
       _showError('Silakan ambil foto selfie terlebih dahulu.');
       return;
     }
 
-    if (!ktpUploaded) {
-      _showError('Silakan ambil foto KTP terlebih dahulu.');
+    if (!ktpConfirmed && !ktpUploaded) {
+      _showError('Silakan konfirmasi data KTP terlebih dahulu.');
+      return;
+    }
+
+    if (ktpNeedsUpload && !ktpConfirmed) {
+      _showError('Silakan periksa dan konfirmasi foto KTP terbaru.');
       return;
     }
 
@@ -337,9 +330,36 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
     });
 
     try {
+      // Unggah KTP hanya ketika diperlukan.
+      if (!ktpUploaded || ktpNeedsUpload) {
+        final ktpFile = ktpImage;
+
+        if (ktpFile == null) {
+          throw Exception('Foto KTP belum tersedia.');
+        }
+
+        final documentResult = await api.uploadIdentityDocument(
+          verificationId: widget.verificationId,
+          file: ktpFile,
+        );
+
+        if (!mounted) return;
+
+        if (!documentResult.documentUploaded) {
+          throw Exception('Foto KTP belum berhasil disimpan.');
+        }
+
+        setState(() {
+          verification = documentResult;
+          ktpUploaded = true;
+          ktpNeedsUpload = false;
+        });
+      }
+
+      // Unggah swafoto setelah KTP tersedia di backend.
       final result = await api.uploadIdentitySelfie(
         verificationId: widget.verificationId,
-        file: image,
+        file: selfie,
       );
 
       if (!mounted) return;
@@ -347,28 +367,28 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
       setState(() {
         verification = result;
         selfieUploaded = result.selfieUploaded;
-        uploadingSelfie = false;
       });
 
-      if (result.selfieUploaded && result.documentUploaded) {
-        Navigator.of(context).pop(true);
+      if (!result.documentUploaded ||
+          !result.selfieUploaded ||
+          result.status != 'MANUAL_REVIEW') {
+        _showError('KTP dan swafoto belum berhasil dikirim untuk ditinjau.');
         return;
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Swafoto berhasil dikirim.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        uploadingSelfie = false;
-      });
-
       _showError(_formatError(e));
+      return;
+    } finally {
+      if (mounted) {
+        setState(() {
+          uploadingSelfie = false;
+        });
+      }
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop(true);
     }
   }
 
@@ -478,7 +498,8 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
 
   Widget _buildTab({required String label, required int index}) {
     final selected = currentStep == index;
-    final enabled = index == 0 || ktpUploaded;
+    final enabled =
+        index == 0 || (ktpConfirmed || (ktpUploaded && !ktpNeedsUpload));
 
     return InkWell(
       onTap: enabled

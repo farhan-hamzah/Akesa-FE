@@ -66,6 +66,13 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     return widget.identityVerification?.status == 'VERIFIED';
   }
 
+  String get _identityStatus {
+    return (widget.identityVerification?.status ??
+            _currentProfile?.identityVerificationStatus ??
+            'NOT_VERIFIED')
+        .toUpperCase();
+  }
+
   static const Color akesaGreen = Color(0xFF4D8F00);
   static const Color akesaDarkGreen = Color(0xFF185C22);
 
@@ -828,6 +835,158 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     );
   }
 
+  Widget _buildIdentityVerificationSection() {
+    final status = _identityStatus;
+
+    String title;
+    String description;
+    IconData statusIcon;
+    Color statusColor;
+
+    switch (status) {
+      case 'VERIFIED':
+        title = 'Identitas Terverifikasi';
+        description = 'Identitas kamu sudah berhasil diverifikasi.';
+        statusIcon = Icons.verified_outlined;
+        statusColor = Colors.green;
+        break;
+
+      case 'MANUAL_REVIEW':
+        title = 'KTP Sedang Diverifikasi';
+        description = 'KTP dan swafoto sudah diterima dan sedang menunggu verifikasi admin.';
+        statusIcon = Icons.hourglass_top_rounded;
+        statusColor = Colors.orange.shade800;
+        break;
+
+      case 'PROCESSING':
+        title = 'Verifikasi Sedang Diproses';
+        description = 'Dokumen dan data kamu sedang diproses oleh sistem.';
+        statusIcon = Icons.sync_rounded;
+        statusColor = Colors.blue;
+        break;
+
+      case 'DATA_MISMATCH':
+        title = 'Data Tidak Sesuai';
+        description = 'Data KTP tidak sesuai dengan profil kamu. Silakan periksa kembali data.';
+        statusIcon = Icons.error_outline;
+        statusColor = Colors.red;
+        break;
+
+      case 'DOCUMENT_REJECTED':
+        title = 'KTP Ditolak';
+        description = 'Dokumen KTP tidak dapat digunakan. Silakan lakukan verifikasi kembali.';
+        statusIcon = Icons.cancel_outlined;
+        statusColor = Colors.red;
+        break;
+
+      case 'LIVENESS_FAILED':
+        title = 'Verifikasi Wajah Gagal';
+        description = 'Swafoto tidak memenuhi pemeriksaan liveness. Silakan verifikasi kembali.';
+        statusIcon = Icons.face_retouching_off;
+        statusColor = Colors.red;
+        break;
+
+      case 'FACE_MISMATCH':
+        title = 'Wajah Tidak Sesuai';
+        description =
+            'Wajah pada swafoto tidak sesuai dengan foto pada dokumen.';
+        statusIcon = Icons.person_off_outlined;
+        statusColor = Colors.red;
+        break;
+
+      case 'EXPIRED':
+        title = 'Verifikasi Kedaluwarsa';
+        description = 'Sesi verifikasi sebelumnya sudah kedaluwarsa. Silakan lakukan verifikasi kembali.';
+        statusIcon = Icons.access_time;
+        statusColor = Colors.orange.shade800;
+        break;
+
+      case 'PENDING':
+        title = 'Verifikasi Belum Selesai';
+        description = 'Lengkapi foto KTP dan swafoto untuk melanjutkan verifikasi identitas.';
+        statusIcon = Icons.pending_outlined;
+        statusColor = Colors.orange.shade800;
+        break;
+
+      default:
+        title = 'Verifikasi Identitas';
+        description = 'Pindai KTP untuk mengisi data secara otomatis, kemudian lanjutkan verifikasi identitas.';
+        statusIcon = Icons.verified_user_outlined;
+        statusColor = akesaGreen;
+    }
+
+    final canStartVerification = ![
+      'VERIFIED',
+      'MANUAL_REVIEW',
+      'PROCESSING',
+    ].contains(status);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: statusColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(statusIcon, color: statusColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(description, style: const TextStyle(fontSize: 13, height: 1.5)),
+
+          if (canStartVerification) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: (_isReadingKtp || _isIdentityVerified)
+                  ? null
+                  : _showKtpPicker,
+              icon: const Icon(Icons.document_scanner_outlined),
+              label: Text(
+                _isReadingKtp
+                    ? 'Sedang membaca KTP...'
+                    : 'Pindai KTP & Isi Otomatis',
+              ),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: (_isSaving || _isIdentityVerified)
+                  ? null
+                  : _startIdentityVerification,
+              icon: const Icon(Icons.verified_user_outlined),
+              label: const Text('Verifikasi Identitas'),
+              style: FilledButton.styleFrom(
+                backgroundColor: akesaGreen,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildBloodTypeSelector() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -1064,77 +1223,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
                 const SizedBox(height: 16),
 
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: akesaGreen.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: akesaGreen.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.verified_user_outlined),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Verifikasi Identitas',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      const Text(
-                        'Pindai KTP untuk mengisi data secara otomatis, '
-                        'kemudian lanjutkan verifikasi identitas Anda.',
-                        style: TextStyle(fontSize: 13, height: 1.5),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      OutlinedButton.icon(
-                        onPressed: (_isReadingKtp || _isIdentityVerified)
-                            ? null
-                            : _showKtpPicker,
-                        icon: const Icon(Icons.document_scanner_outlined),
-                        label: Text(
-                          _isReadingKtp
-                              ? 'Sedang membaca KTP...'
-                              : 'Pindai KTP & Isi Otomatis',
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 48),
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      FilledButton.icon(
-                        onPressed: (_isSaving || _isIdentityVerified)
-                            ? null
-                            : _startIdentityVerification,
-                        icon: const Icon(Icons.verified_user_outlined),
-                        label: const Text('Verifikasi Identitas'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: akesaGreen,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(double.infinity, 48),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _buildIdentityVerificationSection(),
 
                 const SizedBox(height: 24),
 

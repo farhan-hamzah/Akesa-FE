@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -116,9 +117,13 @@ extension StaffAdminApi on AkesaApi {
   Future<List<HospitalApplication>> adminGetHospitalApplications({
     String? status,
   }) async {
-    final query =
-        (status != null && status.isNotEmpty) ? '?status=$status' : '';
-    final json = await _send('GET', '/api/v1/admin/hospital-applications$query');
+    final query = (status != null && status.isNotEmpty)
+        ? '?status=$status'
+        : '';
+    final json = await _send(
+      'GET',
+      '/api/v1/admin/hospital-applications$query',
+    );
     if (json is! List) return [];
     return json
         .whereType<Map<String, dynamic>>()
@@ -134,7 +139,10 @@ extension StaffAdminApi on AkesaApi {
   }
 
   Future<dynamic> adminApproveHospitalApplication(String id) async {
-    return await _send('POST', '/api/v1/admin/hospital-applications/$id/approve');
+    return await _send(
+      'POST',
+      '/api/v1/admin/hospital-applications/$id/approve',
+    );
   }
 
   Future<dynamic> adminRequestRevisionHospitalApplication(
@@ -170,6 +178,90 @@ extension StaffAdminApi on AkesaApi {
       '/api/v1/admin/hospitals/$hospitalId/staff',
       body: {'userId': userId, 'fullName': fullName, 'position': position},
     );
+  }
+
+  Future<List<AdminIdentityVerification>>
+  adminGetPendingIdentityVerifications() async {
+    final json = await _send('GET', '/api/v1/admin/identity-verifications');
+
+    if (json is! List) return [];
+
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(AdminIdentityVerification.fromJson)
+        .toList();
+  }
+
+  Future<Uint8List> adminGetIdentityDocument(
+    String id, {
+    required String type,
+  }) async {
+    final normalizedType = type.toLowerCase();
+
+    if (normalizedType != 'ktp' && normalizedType != 'selfie') {
+      throw ArgumentError('Tipe dokumen tidak valid.');
+    }
+
+    final token = await getSessionToken();
+
+    if (token == null || token.isEmpty) {
+      throw ApiException(401, 'Session token tidak tersedia.');
+    }
+
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}'
+      '/api/v1/admin/identity-verifications/'
+      '$id/documents/$normalizedType',
+    );
+
+    final http.Response response;
+
+    try {
+      response = await http
+          .get(
+            uri,
+            headers: {
+              'Accept': 'image/jpeg, image/png',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw ApiException(408, 'Server tidak merespons. Coba lagi.');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var message = 'Gagal mengambil dokumen identitas.';
+
+      try {
+        final decoded = jsonDecode(response.body);
+
+        if (decoded is Map<String, dynamic>) {
+          message =
+              decoded['error']?.toString() ??
+              decoded['message']?.toString() ??
+              message;
+        }
+      } catch (_) {}
+
+      throw ApiException(response.statusCode, message);
+    }
+
+    final contentType = response.headers['content-type']
+        ?.split(';')
+        .first
+        .trim()
+        .toLowerCase();
+
+    if (contentType != 'image/jpeg' && contentType != 'image/png') {
+      throw ApiException(500, 'Format dokumen dari server tidak valid.');
+    }
+
+    if (response.bodyBytes.isEmpty) {
+      throw ApiException(404, 'Dokumen identitas kosong.');
+    }
+
+    return response.bodyBytes;
   }
 
   Future<dynamic> adminApproveIdentity(String id) =>

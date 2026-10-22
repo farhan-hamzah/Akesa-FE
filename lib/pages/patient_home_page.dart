@@ -17,6 +17,7 @@ import '../models/identity_verification_data.dart';
 import 'patient_profile_form_page.dart';
 import 'identify_verification_page.dart';
 import 'auth_page.dart';
+import 'notification_page.dart';
 
 import '../widgets/patient/access_request_card.dart';
 import '../widgets/patient/history_card.dart';
@@ -231,6 +232,39 @@ class _PatientHomePageState extends State<PatientHomePage> {
             _showCompleteProfilePrompt();
           }
         });
+      } else {
+        // Cek jika ada notifikasi peringatan keamanan / integritas yang belum dibaca saat aplikasi dibuka
+        try {
+          final notifRes = await api.getNotifications(unreadOnly: true, limit: 5);
+          for (final item in notifRes.notifications) {
+            if (item.isSecurityAlert ||
+                item.isCritical ||
+                item.title.toLowerCase().contains('integritas')) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  NotificationService.instance.showInAppNotificationBanner(
+                    title: item.title,
+                    body: item.message,
+                    category: item.category,
+                    severity: item.severity,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              NotificationPage(authState: widget.authState),
+                        ),
+                      );
+                    },
+                  );
+                }
+              });
+              break;
+            }
+          }
+        } catch (e) {
+          debugPrint('Gagal memeriksa peringatan keamanan saat buka aplikasi: $e');
+        }
       }
     } catch (e) {
       debugPrint('Gagal memuat data utama Patient Home: $e');

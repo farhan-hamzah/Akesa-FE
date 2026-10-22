@@ -27,64 +27,146 @@ class NotificationService {
   }
 
   /// Menampilkan banner notifikasi melayang di atas layar saat aplikasi sedang terbuka
+  /// Menampilkan banner notifikasi melayang di atas layar saat aplikasi sedang terbuka
   void showInAppNotificationBanner({
     required String title,
     required String body,
+    String? category,
+    String? severity,
+    VoidCallback? onTap,
   }) {
     final messenger = rootScaffoldMessengerKey.currentState;
     if (messenger == null) return;
+
+    final isSecurityAlert = (category?.toUpperCase() == 'SECURITY_ALERT') ||
+        (severity?.toUpperCase() == 'CRITICAL') ||
+        title.toLowerCase().contains('integritas');
 
     messenger.clearSnackBars();
     messenger.showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: const Color(0xFF0F172A),
-        elevation: 8,
-        duration: const Duration(seconds: 4),
-        content: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4D8F00).withValues(alpha: 0.2),
-                shape: BoxShape.circle,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: isSecurityAlert
+              ? const BorderSide(color: Color(0xFFEF4444), width: 1.5)
+              : BorderSide.none,
+        ),
+        backgroundColor: isSecurityAlert
+            ? const Color(0xFF1E0A0A) // Dark Crimson
+            : const Color(0xFF0F172A), // Dark Slate
+        elevation: isSecurityAlert ? 12 : 8,
+        duration: Duration(seconds: isSecurityAlert ? 8 : 4),
+        content: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Icon Container (Warning Sign untuk Security Alert)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isSecurityAlert
+                      ? const Color(0xFFEF4444).withValues(alpha: 0.18)
+                      : const Color(0xFF4D8F00).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: isSecurityAlert
+                      ? Border.all(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+                          width: 1,
+                        )
+                      : null,
+                ),
+                child: Icon(
+                  isSecurityAlert
+                      ? Icons.warning_amber_rounded
+                      : Icons.notifications_active_rounded,
+                  color: isSecurityAlert
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFF4D8F00),
+                  size: isSecurityAlert ? 24 : 20,
+                ),
               ),
-              child: const Icon(
-                Icons.notifications_active_rounded,
-                color: Color(0xFF4D8F00),
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.white,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isSecurityAlert) ...[
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDC2626),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'PERINGATAN KEAMANAN',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.6,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'KRITIS',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFFCA5A5),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    body,
-                    style: const TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 12,
+                    const SizedBox(height: 2),
+                    Text(
+                      body,
+                      style: TextStyle(
+                        color: isSecurityAlert
+                            ? const Color(0xFFE2E8F0)
+                            : const Color(0xFF94A3B8),
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+              if (onTap != null) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: isSecurityAlert
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFF94A3B8),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -140,10 +222,19 @@ class NotificationService {
       // 4. Listen pesan saat aplikasi sedang dibuka (Foreground)
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         final title = message.notification?.title ?? 'Notifikasi Baru';
-        final body = message.notification?.body ?? '';
+        final body = message.notification?.body ??
+            message.data['message']?.toString() ??
+            '';
+        final category = message.data['category']?.toString();
+        final severity = message.data['severity']?.toString();
         debugPrint('[NotificationService] Notifikasi masuk (Foreground): $title');
         refreshUnreadCount(api);
-        showInAppNotificationBanner(title: title, body: body);
+        showInAppNotificationBanner(
+          title: title,
+          body: body,
+          category: category,
+          severity: severity,
+        );
       });
 
       // 5. Listen saat user klik notifikasi di system tray

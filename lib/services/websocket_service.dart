@@ -99,18 +99,26 @@ class WebSocketService {
           NotificationService.instance.refreshUnreadCount(_api!);
         }
 
+        final category = data['category']?.toString();
+        final severity = data['severity']?.toString();
+        final isSecurityAlert = (category?.toUpperCase() == 'SECURITY_ALERT') ||
+            (severity?.toUpperCase() == 'CRITICAL') ||
+            (data['title']?.toString().toLowerCase().contains('integritas') ?? false);
+
         // Tampilkan banner mengambang jika platform tidak memiliki push FCM native (misal Windows)
-        if (!NotificationService.instance.isPushNotificationSupported) {
+        // ATAU jika ini notifikasi keamanan kritis (peringatan integritas wajib selalu muncul di foreground)
+        if (!NotificationService.instance.isPushNotificationSupported || isSecurityAlert) {
           final title = data['title']?.toString() ?? 'Pemberitahuan Baru';
           final message = data['message']?.toString() ?? '';
           NotificationService.instance.showInAppNotificationBanner(
             title: title,
             body: message,
+            category: category,
+            severity: severity,
           );
         }
 
         // Cek apakah notifikasi ini terkait permintaan akses (access request)
-        final category = data['category']?.toString();
         final metadata = data['metadata'];
         if (category == 'ACCESS_REQUEST' || metadata is Map) {
           _accessRequestUpdateController.add(data);

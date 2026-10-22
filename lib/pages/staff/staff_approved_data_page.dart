@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../models/access_request_data.dart';
 import '../../models/api_exception.dart';
 import '../../services/akesa_api.dart';
 import '../../services/akesa_staff_admin_api.dart';
+import '../../services/websocket_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/shared/ui_kit.dart';
 
@@ -24,6 +26,7 @@ class _StaffApprovedDataPageState extends State<StaffApprovedDataPage> {
   bool loading = true;
   Object? error;
   Map<String, dynamic>? data;
+  StreamSubscription? _wsSubscription;
 
   static const _labels = {
     'fullName': 'Nama Lengkap',
@@ -44,7 +47,27 @@ class _StaffApprovedDataPageState extends State<StaffApprovedDataPage> {
   @override
   void initState() {
     super.initState();
+    _wsSubscription = WebSocketService.instance.onAccessRequestUpdated.listen((meta) {
+      final reqId = (meta is Map ? meta['requestId'] : null) ?? meta['id'];
+      if (reqId != null && reqId.toString() == widget.request.id) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Izin akses rekam medis telah dicabut oleh pasien.'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _wsSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {

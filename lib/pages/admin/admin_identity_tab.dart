@@ -124,19 +124,21 @@ class _AdminIdentityTabState extends State<AdminIdentityTab> {
   }
 
   Future<String?> _askReason() async {
-    final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    String reason = '';
 
-    final result = await showDialog<String>(
+    return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Tolak verifikasi'),
         content: Form(
           key: formKey,
           child: TextFormField(
-            controller: controller,
             autofocus: true,
             maxLines: 3,
+            onChanged: (value) {
+              reason = value;
+            },
             decoration: const InputDecoration(
               labelText: 'Alasan penolakan',
               hintText: 'Contoh: Foto KTP tidak terbaca.',
@@ -159,7 +161,7 @@ class _AdminIdentityTabState extends State<AdminIdentityTab> {
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                Navigator.pop(ctx, controller.text.trim());
+                Navigator.pop(ctx, reason.trim());
               }
             },
             child: const Text('Tolak'),
@@ -167,9 +169,6 @@ class _AdminIdentityTabState extends State<AdminIdentityTab> {
         ],
       ),
     );
-
-    controller.dispose();
-    return result;
   }
 
   Future<bool> _confirmApprove() async {

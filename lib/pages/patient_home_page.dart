@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +20,7 @@ import '../widgets/patient/access_request_card.dart';
 import '../widgets/patient/history_card.dart';
 import '../widgets/patient/patient_code_card.dart';
 import '../widgets/patient/patient_qr_sheet.dart';
+import '../widgets/shared/ui_kit.dart';
 
 class PatientHomePage extends StatefulWidget {
   final ClerkAuthState authState;
@@ -82,12 +81,22 @@ class _PatientHomePageState extends State<PatientHomePage> {
     }
   }
 
-  bool get _isIdentityVerified {
-    return (profile?.identityVerificationStatus ?? 'NOT_VERIFIED')
-            .trim()
-            .toUpperCase() ==
-        'VERIFIED';
-  }
+  String get _identityStatus =>
+      (_identityVerification?.status ??
+              profile?.identityVerificationStatus ??
+              'NOT_VERIFIED')
+          .trim()
+          .toUpperCase();
+
+  bool get _isIdentityVerified => _identityStatus == 'VERIFIED';
+
+  bool get _canStartVerification =>
+      profile != null &&
+      !const {
+        'VERIFIED',
+        'PROCESSING',
+        'MANUAL_REVIEW',
+      }.contains(_identityStatus);
 
   bool get _canAccessPatientQr {
     return profile != null &&
@@ -123,10 +132,8 @@ class _PatientHomePageState extends State<PatientHomePage> {
     });
 
     try {
-      // 1. Sinkronisasi akun harus berhasil.
       await api.syncUser();
 
-      // 2. Profil belum ada adalah kondisi normal bagi pengguna baru.
       PatientProfileData? loadedProfile;
 
       try {
@@ -136,7 +143,6 @@ class _PatientHomePageState extends State<PatientHomePage> {
         loadedProfile = null;
       }
 
-      // 3. Data tambahan tidak boleh memblokir Home.
       List<AccessRequestData> loadedRequests = [];
       List<HospitalData> loadedHospitals = [];
       IdentityVerificationData? loadedVerification;
@@ -211,11 +217,11 @@ class _PatientHomePageState extends State<PatientHomePage> {
     } catch (e) {
       debugPrint('Gagal load history: $e');
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        historyLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          historyLoading = false;
+        });
+      }
     }
   }
 
@@ -298,12 +304,17 @@ class _PatientHomePageState extends State<PatientHomePage> {
   Future<void> _openIdentityVerification() async {
     if (_identityLoading) return;
 
+    // Verifikasi baru bisa dimulai setelah profil tersimpan.
+    if (profile == null) {
+      _showCompleteProfilePrompt();
+      return;
+    }
+
     setState(() {
       _identityLoading = true;
     });
 
     try {
-      // Cek apakah masih ada verification yang aktif
       final latestVerification = await api.getLatestIdentityVerification();
 
       IdentityVerificationData verification;
@@ -328,13 +339,8 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
       if (!mounted) return;
 
-      final latestAfterVerification = await api.getLatestIdentityVerification();
-
-      if (!mounted) return;
-
-      setState(() {
-        _identityVerification = latestAfterVerification;
-      });
+      // Muat ulang profil + status verifikasi
+      await _loadHome();
     } catch (e) {
       if (!mounted) return;
 
@@ -345,12 +351,44 @@ class _PatientHomePageState extends State<PatientHomePage> {
         ),
       );
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _identityLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _identityLoading = false;
+        });
+      }
     }
+  }
+
+  Future<void> _promptVerificationAfterProfile() async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Verifikasi Identitas'),
+        content: const Text(
+          'Profil Anda sudah tersimpan. Selanjutnya verifikasi identitas '
+          'dengan foto KTP dan swafoto. Kode pasien dan QR aktif setelah '
+          'verifikasi berhasil.\n\n'
+          'Dengan melanjutkan, Anda menyetujui pemrosesan foto KTP dan '
+          'swafoto untuk keperluan verifikasi, termasuk pemeriksaan oleh '
+          'petugas berwenang.',
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Nanti'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: primaryGreen),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Verifikasi Sekarang'),
+          ),
+        ],
+      ),
+    );
+
+    if (go == true && mounted) await _openIdentityVerification();
   }
 
   // ==========================================================
@@ -404,8 +442,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
         ),
       );
     } finally {
-      if (!mounted) return;
-      setState(() => qrLoading = false);
+      if (mounted) setState(() => qrLoading = false);
     }
   }
 
@@ -506,12 +543,13 @@ class _PatientHomePageState extends State<PatientHomePage> {
         ),
       );
     } finally {
-      if (!mounted) return;
-      setState(() => qrRotating = false);
+      if (mounted) setState(() => qrRotating = false);
     }
   }
 
   Future<void> _copyPatientCode() async {
+    if (!_canAccessPatientQr) return;
+
     final code = profile?.patientCode;
     if (code == null || code.isEmpty || code == '-') return;
 
@@ -611,11 +649,11 @@ class _PatientHomePageState extends State<PatientHomePage> {
         ),
       );
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        actionLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          actionLoading = false;
+        });
+      }
     }
   }
 
@@ -624,17 +662,30 @@ class _PatientHomePageState extends State<PatientHomePage> {
   // ==========================================================
 
   Future<void> _logout() async {
-    try {
-      await widget.authState.signOut();
-    } catch (e) {
-      debugPrint('Logout error: $e');
-    }
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AuthPage()),
-        (route) => false,
-      );
-    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Keluar dari akun?'),
+        content: const Text(
+          'Anda perlu masuk kembali untuk mengakses aplikasi.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Keluar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    await performLogout(context, widget.authState);
   }
 
   // ==========================================================
@@ -722,10 +773,10 @@ class _PatientHomePageState extends State<PatientHomePage> {
           children: [
             _buildHeader(),
             const SizedBox(height: 4),
-            if (profile == null) ...[
+            if (profile != null && !_isIdentityVerified) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
-                child: _buildProfileIncompleteBanner(),
+                child: _buildIdentityStatusBanner(),
               ),
             ],
             Padding(
@@ -1053,36 +1104,36 @@ class _PatientHomePageState extends State<PatientHomePage> {
           authState: widget.authState,
           profile: profile,
           identityVerification: _identityVerification,
-          onProfileCreated: () {
-            _loadHome();
-          },
-          onStartIdentityVerification: (ktpImage) async {
-            await _openIdentityVerification();
-          },
         ),
       ),
     );
 
+    if (!mounted || result == null) return;
+
+    if (result is PatientProfileData) {
+      setState(() => profile = result);
+    }
+
+    await _loadHome();
     if (!mounted) return;
 
-    if (result != null) {
-      if (result is PatientProfileData) {
-        setState(() {
-          profile = result;
-        });
-      }
-      await _loadHome();
+    // Setelah profil tersimpan, tawarkan verifikasi KTP + swafoto.
+    if (result is PatientProfileData && _canStartVerification) {
+      await _promptVerificationAfterProfile();
     }
   }
 
   Future<void> _showCompleteProfilePrompt() async {
     if (_isPromptOpen || !mounted || profile != null) return;
     _isPromptOpen = true;
+    bool? fillNow;
 
     try {
-      final fillNow = await showModalBottomSheet<bool>(
+      fillNow = await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
         backgroundColor: Colors.transparent,
         builder: (ctx) => const _CompleteProfilePromptSheet(),
       );
@@ -1093,102 +1144,94 @@ class _PatientHomePageState extends State<PatientHomePage> {
     } finally {
       _isPromptOpen = false;
     }
+
+    if (!mounted) return;
+
+    if (fillNow == false) {
+      await _logout();
+    } else if (profile == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showCompleteProfilePrompt();
+      });
+    }
   }
 
-  Widget _buildProfileIncompleteBanner() {
+  Widget _buildIdentityStatusBanner() {
+    if (profile == null) return const SizedBox.shrink();
+
+    final status = _identityStatus;
+
+    if (status == 'VERIFIED') return const SizedBox.shrink();
+
+    final inReview = status == 'MANUAL_REVIEW' || status == 'PROCESSING';
+    final color = inReview ? Colors.orange.shade800 : Colors.redAccent;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FDF7),
+        color: color.withOpacity(0.07),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFCFE5C9)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: color.withOpacity(0.25)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: lightGreen,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.assignment_late_outlined,
-              color: primaryGreen,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Profil Belum Lengkap',
+          Row(
+            children: [
+              Icon(
+                inReview ? Icons.hourglass_top_rounded : Icons.error_outline,
+                color: color,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  inReview
+                      ? 'Menunggu Verifikasi Admin'
+                      : 'Verifikasi Identitas Diperlukan',
                   style: TextStyle(
-                    color: textGreen,
-                    fontSize: 14,
+                    color: color,
                     fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Lengkapi data profil pasien Anda untuk mengaktifkan kode QR dan mengakses layanan medis.',
-                  style: TextStyle(
-                    color: Color(0xFF5E6D5D),
-                    fontSize: 12,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: primaryGreen,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 6,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: _openProfileForm,
-                    child: const Text(
-                      'Lengkapi Sekarang',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            inReview
+                ? 'KTP dan swafoto Anda sedang diperiksa admin. Kode pasien dan QR '
+                      'belum dapat diakses sampai verifikasi berhasil.'
+                : 'Verifikasi KTP dan swafoto Anda belum selesai. Kode pasien dan QR '
+                      'tersedia setelah identitas terverifikasi.',
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: Color(0xFF5E6D5D),
             ),
           ),
+          if (!inReview) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: _identityLoading ? null : _openIdentityVerification,
+                style: FilledButton.styleFrom(backgroundColor: primaryGreen),
+                child: Text(
+                  _identityLoading ? 'Mempersiapkan...' : 'Verifikasi Sekarang',
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildIdentityVerificationCard() {
-    final status =
-        (_identityVerification?.status ??
-                profile?.identityVerificationStatus ??
-                'NOT_VERIFIED')
-            .toUpperCase();
+    final status = _identityStatus;
 
     String title;
     String description;
@@ -1242,18 +1285,23 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
       default:
         title = 'Verifikasi Identitas';
-        description = 'Upload KTP untuk melanjutkan verifikasi identitas.';
+        description = profile == null
+            ? 'Lengkapi profil Anda terlebih dahulu, lalu verifikasi dengan KTP dan swafoto.'
+            : 'Verifikasi dengan foto KTP dan swafoto untuk mengaktifkan kode pasien dan QR.';
     }
 
     final isVerified = status == 'VERIFIED';
     final canContinueVerification =
-        status == 'NOT_VERIFIED' ||
-        status == 'PENDING' ||
-        status == 'EXPIRED' ||
-        status == 'DOCUMENT_REJECTED' ||
-        status == 'DATA_MISMATCH' ||
-        status == 'LIVENESS_FAILED' ||
-        status == 'FACE_MISMATCH';
+        _canStartVerification &&
+        const {
+          'NOT_VERIFIED',
+          'PENDING',
+          'EXPIRED',
+          'DOCUMENT_REJECTED',
+          'DATA_MISMATCH',
+          'LIVENESS_FAILED',
+          'FACE_MISMATCH',
+        }.contains(status);
 
     return Card(
       child: Padding(
@@ -1335,9 +1383,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
             const SizedBox(height: 18),
 
-            // ======================================================
             // PROFILE HEADER
-            // ======================================================
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(18),
@@ -1379,8 +1425,11 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
                   const SizedBox(height: 3),
 
+                  // Kode pasien tidak boleh tampil sebelum VERIFIED.
                   Text(
-                    patient?.patientCode ?? '-',
+                    _canAccessPatientQr
+                        ? patient!.patientCode
+                        : 'Kode pasien belum tersedia',
                     style: const TextStyle(
                       color: Color(0xFF829181),
                       fontSize: 11,
@@ -1390,9 +1439,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
               ),
             ),
 
-            // ======================================================
             // EDIT PROFILE BUTTON
-            // ======================================================
             const SizedBox(height: 14),
 
             SizedBox(
@@ -1425,18 +1472,14 @@ class _PatientHomePageState extends State<PatientHomePage> {
               ),
             ),
 
-            // ======================================================
             // IDENTITY VERIFICATION
-            // ======================================================
             const SizedBox(height: 14),
 
             _buildIdentityVerificationCard(),
 
             const SizedBox(height: 14),
 
-            // ======================================================
             // PROFILE INFORMATION
-            // ======================================================
             _buildProfileInfo(
               icon: Icons.phone_outlined,
               label: 'Nomor Telepon',
@@ -1463,9 +1506,7 @@ class _PatientHomePageState extends State<PatientHomePage> {
 
             const SizedBox(height: 15),
 
-            // ======================================================
             // LOGOUT
-            // ======================================================
             SizedBox(
               width: double.infinity,
               height: 46,
@@ -1711,9 +1752,10 @@ class _CompleteProfilePromptSheet extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           const Text(
-            'Selamat datang di Akesa! Akun Anda belum memiliki data profil pasien. '
-            'Lengkapi NIK dan data diri Anda untuk mengaktifkan kode QR pasien '
-            'serta menghubungkan rekam medis Anda.',
+            'Selamat datang di Akesa! Lengkapi profil Anda secara manual atau '
+            'bantu dengan pemindaian KTP. Setelah profil tersimpan, lanjutkan '
+            'verifikasi KTP dan swafoto. Kode pasien dan QR aktif setelah '
+            'identitas terverifikasi.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
@@ -1746,7 +1788,7 @@ class _CompleteProfilePromptSheet extends StatelessWidget {
             child: TextButton(
               onPressed: () => Navigator.of(context).pop(false),
               child: const Text(
-                'Nanti Saja',
+                'Keluar dari akun',
                 style: TextStyle(
                   color: Color(0xFF70806F),
                   fontWeight: FontWeight.w600,

@@ -1,16 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-
-import 'package:flutter/material.dart';
-import 'package:clerk_flutter/clerk_flutter.dart';
-import 'package:image_picker/image_picker.dart';
-
-import '../models/ktp_ocr_data.dart';
-import 'identify_verification_page.dart';
-
-import 'dart:io';
 
 import '../models/api_exception.dart';
 import '../models/patient_profile_data.dart';
@@ -23,16 +16,11 @@ class PatientProfileFormPage extends StatefulWidget {
     required this.authState,
     this.profile,
     this.identityVerification,
-    this.onProfileCreated,
-    this.onStartIdentityVerification,
   });
 
   final ClerkAuthState authState;
   final PatientProfileData? profile;
   final IdentityVerificationData? identityVerification;
-  final VoidCallback? onProfileCreated;
-
-  final Future<void> Function(XFile? ktpImage)? onStartIdentityVerification;
 
   @override
   State<PatientProfileFormPage> createState() => _PatientProfileFormPageState();
@@ -54,24 +42,21 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
   final ImagePicker _picker = ImagePicker();
 
-  XFile? _ktpImage;
   DateTime? _dateOfBirth;
   String? _selectedGender;
   String? _selectedBloodType;
   bool _isSaving = false;
   bool _isReadingKtp = false;
   PatientProfileData? _currentProfile;
+  IdentityVerificationData? _verification;
 
-  bool get _isIdentityVerified {
-    return widget.identityVerification?.status == 'VERIFIED';
-  }
+  String get _identityStatus =>
+      (_verification?.status ??
+              _currentProfile?.identityVerificationStatus ??
+              'NOT_VERIFIED')
+          .toUpperCase();
 
-  String get _identityStatus {
-    return (widget.identityVerification?.status ??
-            _currentProfile?.identityVerificationStatus ??
-            'NOT_VERIFIED')
-        .toUpperCase();
-  }
+  bool get _isIdentityVerified => _identityStatus == 'VERIFIED';
 
   static const Color akesaGreen = Color(0xFF4D8F00);
   static const Color akesaDarkGreen = Color(0xFF185C22);
@@ -82,6 +67,9 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
     api = AkesaApi(authState: widget.authState);
     _currentProfile = widget.profile;
+
+    _verification = widget.identityVerification;
+    _refreshVerification();
 
     final profile = widget.profile;
 
@@ -96,7 +84,6 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
       _insuranceController.text = profile.insuranceNumber ?? '';
 
       _emergencyNameController.text = profile.emergencyContactName ?? '';
-
       _emergencyPhoneController.text = profile.emergencyContactPhone ?? '';
 
       _selectedGender = profile.gender;
@@ -125,6 +112,14 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
       _checkExistingProfile();
     }
+  }
+
+  Future<void> _refreshVerification() async {
+    try {
+      final latest = await api.getLatestIdentityVerification();
+      if (!mounted) return;
+      setState(() => _verification = latest);
+    } catch (_) {}
   }
 
   Future<void> _checkExistingProfile() async {
@@ -160,7 +155,6 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
           existing.emergencyContactName != null) {
         _emergencyNameController.text = existing.emergencyContactName!;
       }
-
       if (_emergencyPhoneController.text.isEmpty &&
           existing.emergencyContactPhone != null) {
         _emergencyPhoneController.text = existing.emergencyContactPhone!;
@@ -209,7 +203,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
     final selectedDate = await showDatePicker(
       context: context,
-      initialDate: DateTime(now.year - 20),
+      initialDate: _dateOfBirth ?? DateTime(now.year - 20),
       firstDate: DateTime(1900),
       lastDate: now,
       helpText: 'Pilih tanggal lahir',
@@ -261,15 +255,10 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
       final dateOfBirth = _formatDateForApi(_dateOfBirth!);
 
       final bloodType = _emptyToNull(_selectedBloodType ?? '');
-
       final drugAllergy = _emptyToNull(_drugAllergyController.text);
-
       final medicalHistory = _emptyToNull(_medicalHistoryController.text);
-
       final insuranceNumber = _emptyToNull(_insuranceController.text);
-
       final emergencyContactName = _emptyToNull(_emergencyNameController.text);
-
       final emergencyContactPhone = _emptyToNull(
         _emergencyPhoneController.text,
       );
@@ -278,10 +267,6 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
       if (_currentProfile == null) {
         try {
-          debugPrint("golongan darah: ${bloodType}");
-          debugPrint("alergi obat: ${drugAllergy}");
-          debugPrint("riwayat sakit: ${medicalHistory}");
-
           result = await api.createPatientProfile(
             nik: _nikController.text.trim(),
             fullName: _fullNameController.text.trim(),
@@ -316,15 +301,14 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
               );
             } on ApiException catch (updateErr) {
               if (updateErr.statusCode == 500) {
-                // Jika update data masuk ke DB tetapi audit log gagal, ambil data profil langsung
+                // Update masuk ke DB tetapi audit log gagal, ambil profil langsung
                 result = await api.getPatientProfile();
               } else {
                 rethrow;
               }
             }
           } else if (e.statusCode == 500) {
-            // 500 sering terjadi bila row profil tersimpan di DB namun blockchain audit log gagal.
-            // Cek apakah profil berhasil tersimpan di DB:
+            // 500 sering terjadi bila profil tersimpan di DB namun audit log gagal.
             try {
               result = await api.getPatientProfile();
             } catch (_) {
@@ -387,16 +371,8 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profil berhasil disimpan.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      widget.onProfileCreated?.call();
-
-      Navigator.of(context).pop(result);
+      _showMessage('Profil berhasil disimpan.');
+      Navigator.of(context).pop(result); // Beranda yang menawarkan verifikasi
     } catch (e) {
       if (!mounted) return;
 
@@ -444,10 +420,15 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
   }
 
   void _showMessage(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
+
+  // ==========================================================
+  // OCR KTP (hanya untuk membantu pengisian, bukan verifikasi)
+  // ==========================================================
 
   Future<void> _showKtpPicker() async {
     if (_isReadingKtp || _isIdentityVerified) return;
@@ -507,41 +488,38 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
         imageQuality: 85,
         maxWidth: 2000,
       );
-
       if (image == null || !mounted) return;
+      await _readKtpAndFill(image);
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage('Gagal mengambil foto KTP.');
+    }
+  }
 
-      setState(() {
-        _ktpImage = image;
-        _isReadingKtp = true;
-      });
+  Future<void> _readKtpAndFill(XFile image) async {
+    setState(() {
+      _isReadingKtp = true;
+    });
 
-      // Kirim foto KTP ke API OCR Akesa.
+    try {
       final result = await api.uploadKtpForOcr(image);
-
       if (!mounted) return;
 
       setState(() {
         if (result.nama != null && result.nama!.trim().isNotEmpty) {
           _fullNameController.text = result.nama!.trim();
         }
-
         if (result.nik != null && result.nik!.trim().isNotEmpty) {
           _nikController.text = result.nik!.replaceAll(RegExp(r'\s+'), '');
         }
-
         if (result.alamat != null && result.alamat!.trim().isNotEmpty) {
           _addressController.text = result.alamat!.trim();
         }
-
         final birthDate = _parseOcrDate(result.tanggalLahir);
-        if (birthDate != null) {
-          _dateOfBirth = birthDate;
-        }
+        if (birthDate != null) _dateOfBirth = birthDate;
 
         final gender = _parseOcrGender(result.jenisKelamin);
-        if (gender != null) {
-          _selectedGender = gender;
-        }
+        if (gender != null) _selectedGender = gender;
 
         final clerkPhone = widget.authState.user?.phoneNumber;
         if (_phoneController.text.trim().isEmpty &&
@@ -552,20 +530,14 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
       });
 
       _showMessage(
-        'Pemindaian selesai. Periksa kembali data KTP sebelum menyimpan profil.',
+        'Data KTP terisi otomatis. Periksa kembali sebelum menyimpan.',
       );
     } catch (e) {
       if (!mounted) return;
-
       debugPrint('KTP OCR Error: $e');
-      final msg = e is ApiException ? e.message : e.toString();
-      _showMessage('Gagal membaca KTP: $msg');
+      _showMessage('Gagal membaca KTP: ${e is ApiException ? e.message : e}');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isReadingKtp = false;
-        });
-      }
+      if (mounted) setState(() => _isReadingKtp = false);
     }
   }
 
@@ -634,6 +606,10 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
     return null;
   }
+
+  // ==========================================================
+  // UI HELPERS
+  // ==========================================================
 
   InputDecoration _inputDecoration({
     required String label,
@@ -835,153 +811,61 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     );
   }
 
-  Widget _buildIdentityVerificationSection() {
-    final status = _identityStatus;
-
-    String title;
-    String description;
-    IconData statusIcon;
-    Color statusColor;
-
-    switch (status) {
-      case 'VERIFIED':
-        title = 'Identitas Terverifikasi';
-        description = 'Identitas kamu sudah berhasil diverifikasi.';
-        statusIcon = Icons.verified_outlined;
-        statusColor = Colors.green;
-        break;
-
-      case 'MANUAL_REVIEW':
-        title = 'KTP Sedang Diverifikasi';
-        description = 'KTP dan swafoto sudah diterima dan sedang menunggu verifikasi admin.';
-        statusIcon = Icons.hourglass_top_rounded;
-        statusColor = Colors.orange.shade800;
-        break;
-
-      case 'PROCESSING':
-        title = 'Verifikasi Sedang Diproses';
-        description = 'Dokumen dan data kamu sedang diproses oleh sistem.';
-        statusIcon = Icons.sync_rounded;
-        statusColor = Colors.blue;
-        break;
-
-      case 'DATA_MISMATCH':
-        title = 'Data Tidak Sesuai';
-        description = 'Data KTP tidak sesuai dengan profil kamu. Silakan periksa kembali data.';
-        statusIcon = Icons.error_outline;
-        statusColor = Colors.red;
-        break;
-
-      case 'DOCUMENT_REJECTED':
-        title = 'KTP Ditolak';
-        description = 'Dokumen KTP tidak dapat digunakan. Silakan lakukan verifikasi kembali.';
-        statusIcon = Icons.cancel_outlined;
-        statusColor = Colors.red;
-        break;
-
-      case 'LIVENESS_FAILED':
-        title = 'Verifikasi Wajah Gagal';
-        description = 'Swafoto tidak memenuhi pemeriksaan liveness. Silakan verifikasi kembali.';
-        statusIcon = Icons.face_retouching_off;
-        statusColor = Colors.red;
-        break;
-
-      case 'FACE_MISMATCH':
-        title = 'Wajah Tidak Sesuai';
-        description =
-            'Wajah pada swafoto tidak sesuai dengan foto pada dokumen.';
-        statusIcon = Icons.person_off_outlined;
-        statusColor = Colors.red;
-        break;
-
-      case 'EXPIRED':
-        title = 'Verifikasi Kedaluwarsa';
-        description = 'Sesi verifikasi sebelumnya sudah kedaluwarsa. Silakan lakukan verifikasi kembali.';
-        statusIcon = Icons.access_time;
-        statusColor = Colors.orange.shade800;
-        break;
-
-      case 'PENDING':
-        title = 'Verifikasi Belum Selesai';
-        description = 'Lengkapi foto KTP dan swafoto untuk melanjutkan verifikasi identitas.';
-        statusIcon = Icons.pending_outlined;
-        statusColor = Colors.orange.shade800;
-        break;
-
-      default:
-        title = 'Verifikasi Identitas';
-        description = 'Pindai KTP untuk mengisi data secara otomatis, kemudian lanjutkan verifikasi identitas.';
-        statusIcon = Icons.verified_user_outlined;
-        statusColor = akesaGreen;
-    }
-
-    final canStartVerification = ![
-      'VERIFIED',
-      'MANUAL_REVIEW',
-      'PROCESSING',
-    ].contains(status);
+  Widget _buildKtpOcrSection() {
+    if (_isIdentityVerified) return const SizedBox.shrink();
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: statusColor.withValues(alpha: 0.06),
+        color: akesaGreen.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: statusColor.withValues(alpha: 0.2)),
+        border: Border.all(color: akesaGreen.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          const Row(
             children: [
-              Icon(statusIcon, color: statusColor),
-              const SizedBox(width: 8),
+              Icon(Icons.document_scanner_outlined, color: akesaGreen),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  title,
+                  'Isi Otomatis dari KTP (Opsional)',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: statusColor,
+                    color: akesaDarkGreen,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(description, style: const TextStyle(fontSize: 13, height: 1.5)),
-
-          if (canStartVerification) ...[
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: (_isReadingKtp || _isIdentityVerified)
-                  ? null
-                  : _showKtpPicker,
-              icon: const Icon(Icons.document_scanner_outlined),
-              label: Text(
-                _isReadingKtp
-                    ? 'Sedang membaca KTP...'
-                    : 'Pindai KTP & Isi Otomatis',
-              ),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
-              ),
+          const Text(
+            'Foto KTP di sini hanya digunakan untuk membantu pengisian data '
+            '(nama, NIK, tanggal lahir, alamat). Ini BUKAN verifikasi '
+            'identitas. Verifikasi KTP dan swafoto dilakukan setelah profil '
+            'tersimpan. Anda juga dapat mengisi seluruh data secara manual.',
+            style: TextStyle(fontSize: 13, height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _isReadingKtp ? null : _showKtpPicker,
+            icon: _isReadingKtp
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.document_scanner_outlined),
+            label: Text(
+              _isReadingKtp ? 'Membaca KTP...' : 'Pindai KTP untuk Isi Data',
             ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: (_isSaving || _isIdentityVerified)
-                  ? null
-                  : _startIdentityVerification,
-              icon: const Icon(Icons.verified_user_outlined),
-              label: const Text('Verifikasi Identitas'),
-              style: FilledButton.styleFrom(
-                backgroundColor: akesaGreen,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
-              ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -1053,8 +937,9 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Lengkapi data Anda dengan benar. Data ini akan digunakan '
-              'untuk proses pendaftaran dan pelayanan rumah sakit.',
+              'Lengkapi data Anda dengan benar. Setelah profil tersimpan, '
+              'Anda akan diminta memverifikasi identitas dengan KTP dan '
+              'swafoto.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,
@@ -1107,33 +992,6 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
     return null;
   }
 
-  Future<void> _startIdentityVerification() async {
-    final callback = widget.onStartIdentityVerification;
-
-    if (callback == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Fitur verifikasi identitas belum tersedia.'),
-        ),
-      );
-      return;
-    }
-
-    if (_isReadingKtp) {
-      return;
-    }
-
-    try {
-      await callback(_ktpImage);
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal membuka verifikasi identitas: $e')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1160,7 +1018,7 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
 
                 if (_isIdentityVerified)
                   Container(
-                    margin: const EdgeInsets.only(bottom: 16),
+                    margin: const EdgeInsets.only(top: 16),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.green.withValues(alpha: 0.08),
@@ -1185,6 +1043,12 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                       ],
                     ),
                   ),
+
+                const SizedBox(height: 16),
+
+                _buildKtpOcrSection(),
+
+                const SizedBox(height: 8),
 
                 _buildSectionTitle(
                   icon: Icons.person_outline,
@@ -1220,12 +1084,6 @@ class _PatientProfileFormPageState extends State<PatientProfileFormPage> {
                 _buildDateField(),
 
                 _buildGenderSelector(),
-
-                const SizedBox(height: 16),
-
-                _buildIdentityVerificationSection(),
-
-                const SizedBox(height: 24),
 
                 _buildSectionTitle(
                   icon: Icons.home_outlined,

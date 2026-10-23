@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/auth/auth_text_field.dart';
 import '../widgets/auth/social_auth_button.dart';
-import 'api_test_page.dart';
+import '../pages/role_gate_page.dart';
 
 class AuthPage extends StatelessWidget {
   const AuthPage({super.key});
@@ -14,7 +14,7 @@ class AuthPage extends StatelessWidget {
     return ClerkErrorListener(
       child: ClerkAuthBuilder(
         signedInBuilder: (context, authState) {
-          return ApiTestPage(authState: authState);
+          return RoleGatePage(authState: authState);
         },
         signedOutBuilder: (context, authState) {
           return AuthForm(authState: authState);
@@ -77,11 +77,114 @@ class _AuthFormState extends State<AuthForm> {
   static const Color darkGreen = Color(0xFF185C22);
 
   // ============================================================
+  // PASSWORD STRETNGH
+  // ============================================================
+
+  int get _passwordStrength {
+    final password = passwordController.text;
+
+    if (password.isEmpty) return 0;
+
+    int score = 0;
+
+    if (password.length >= 8) score++;
+    if (RegExp(r'[a-z]').hasMatch(password)) score++;
+    if (RegExp(r'[A-Z]').hasMatch(password)) score++;
+    if (RegExp(r'[0-9]').hasMatch(password)) score++;
+    if (RegExp(r'[^a-zA-Z0-9]').hasMatch(password)) score++;
+
+    return score;
+  }
+
+  String get _passwordStrengthLabel {
+    if (_passwordStrength <= 2) return 'Rendah';
+    if (_passwordStrength <= 4) return 'Menengah';
+    return 'Kuat';
+  }
+
+  Color get _passwordStrengthColor {
+    if (_passwordStrength <= 2) return const Color(0xFFE53935);
+    if (_passwordStrength <= 4) return const Color(0xFFFFA000);
+    return const Color(0xFF4D8F00);
+  }
+
+  Widget _buildPasswordStrength() {
+    final password = passwordController.text;
+
+    if (isLogin || password.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final strength = _passwordStrength;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Kekuatan password',
+                style: TextStyle(fontSize: 11, color: Color(0xFF60755D)),
+              ),
+              Text(
+                _passwordStrengthLabel,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _passwordStrengthColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: strength / 5,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFE5E7EB),
+              valueColor: AlwaysStoppedAnimation<Color>(_passwordStrengthColor),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            strength == 5
+                ? 'Password sudah memiliki kombinasi karakter yang baik.'
+                : 'Gunakan minimal 8 karakter, huruf besar dan kecil, angka, serta simbol.',
+            style: const TextStyle(
+              fontSize: 10,
+              color: Color(0xFF7A8977),
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
   // DISPOSE
   // ============================================================
 
   @override
+  void initState() {
+    super.initState();
+    passwordController.addListener(_onPasswordChanged);
+  }
+
+  void _onPasswordChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
+    passwordController.removeListener(_onPasswordChanged);
+
     emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
@@ -772,6 +875,8 @@ class _AuthFormState extends State<AuthForm> {
             },
           ),
 
+          _buildPasswordStrength(),
+
           // ------------------------------------------------------
           // CONFIRM PASSWORD
           // ------------------------------------------------------
@@ -797,6 +902,8 @@ class _AuthFormState extends State<AuthForm> {
                 });
               },
             ),
+
+            _buildPasswordStrength(),
           ],
 
           const SizedBox(height: 12),

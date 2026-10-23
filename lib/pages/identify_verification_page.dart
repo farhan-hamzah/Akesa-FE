@@ -12,11 +12,13 @@ import '../services/akesa_api.dart';
 class IdentityVerificationPage extends StatefulWidget {
   final ClerkAuthState authState;
   final String verificationId;
+  final void Function(XFile file)? onKtpCaptured;
 
   const IdentityVerificationPage({
     super.key,
     required this.authState,
     required this.verificationId,
+    this.onKtpCaptured,
   });
 
   @override
@@ -49,6 +51,8 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
 
   bool ktpConfirmed = false;
   bool ktpNeedsUpload = false;
+
+  bool _hasKtpVerificationConsent = false;
 
   IdentityVerificationData? verification;
   KtpOcrData? ktpOcrResult;
@@ -181,6 +185,150 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
   // UPLOAD KTP
   // ==========================================================
 
+  Future<bool> _requestKtpVerificationConsent() async {
+    if (_hasKtpVerificationConsent) return true;
+
+    bool isChecked = false;
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.verified_user_outlined, color: primaryGreen),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Persetujuan Verifikasi Identitas',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Sebelum melanjutkan, mohon baca dan setujui '
+                        'penggunaan data untuk proses verifikasi identitas.',
+                        style: TextStyle(height: 1.5),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Text(
+                        'Data yang diproses',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        '• Foto KTP untuk membaca dan memeriksa informasi '
+                        'identitas Anda.\n'
+                        '• Swafoto untuk mendukung proses pemeriksaan identitas.',
+                        style: TextStyle(height: 1.5),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Text(
+                        'Tujuan penggunaan',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Data digunakan untuk proses verifikasi identitas '
+                        'Akesa. Pengiriman dokumen tidak berarti identitas '
+                        'otomatis dinyatakan terverifikasi.',
+                        style: TextStyle(height: 1.5),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Text(
+                        'Perlindungan data',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Pastikan KTP dan swafoto yang diberikan adalah '
+                        'milik Anda sendiri. Data akan diproses sesuai '
+                        'mekanisme akses dan keamanan yang diterapkan Akesa.',
+                        style: TextStyle(height: 1.5),
+                      ),
+                      const SizedBox(height: 12),
+
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        activeColor: primaryGreen,
+                        value: isChecked,
+                        onChanged: (value) {
+                          setDialogState(() {
+                            isChecked = value ?? false;
+                          });
+                        },
+                        title: const Text(
+                          'Saya telah membaca, memahami, dan menyetujui '
+                          'pemrosesan data KTP dan swafoto untuk verifikasi '
+                          'identitas.',
+                          style: TextStyle(fontSize: 13, height: 1.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(false);
+                  },
+                  child: const Text(
+                    'Batal',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                FilledButton(
+                  onPressed: isChecked
+                      ? () {
+                          Navigator.of(dialogContext).pop(true);
+                        }
+                      : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: primaryGreen,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Saya Setuju dan Lanjutkan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || accepted != true) {
+      return false;
+    }
+
+    setState(() {
+      _hasKtpVerificationConsent = true;
+    });
+
+    return true;
+  }
+
   Future<void> _uploadKtp() async {
     final image = ktpImage;
 
@@ -190,6 +338,11 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
     }
 
     if (uploadingKtp || processingKtpOcr) return;
+
+    // Minta persetujuan sebelum KTP diproses.
+    final consented = await _requestKtpVerificationConsent();
+
+    if (!consented || !mounted) return;
 
     setState(() {
       processingKtpOcr = true;
@@ -342,6 +495,8 @@ class _IdentityVerificationPageState extends State<IdentityVerificationPage> {
           verificationId: widget.verificationId,
           file: ktpFile,
         );
+
+        widget.onKtpCaptured?.call(ktpFile);
 
         if (!mounted) return;
 
